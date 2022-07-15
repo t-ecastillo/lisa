@@ -1343,6 +1343,30 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 					$used_image = Get-AzVMImage -Location $Location -PublisherName $publisher -Offer $offer -Skus $sku -Version $used_image[-1].Version
 				}
 			}
+			# TODO Fix Purchase Plan for SIG images
+			if($SharedImageName -and !$VHDName) {
+				Write-LogInfo "SIG image name is: $SharedImageName"
+				if($SharedImageName -like "*almalinux*") {
+					Write-LogInfo "Adding Alma plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "8_5-gen2"
+					$used_image.PurchasePlan.Product = "almalinux"
+					$used_image.PurchasePlan.Publisher = "almalinux"
+				}
+				elseif ($SharedImageName -like "*kinvolk*") {
+					Write-LogInfo "Adding Kinvolk plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "stable-gen2"
+					$used_image.PurchasePlan.Product = "flatcar-container-linux-free"
+					$used_image.PurchasePlan.Publisher = "kinvolk"
+				}
+				else {
+					Write-LogInfo "Adding No plan"
+					$used_image = $null
+				}
+			}
 			if ($used_image.PurchasePlan) {
 				Write-LogInfo "  Adding plan information: plan name - $($used_image.PurchasePlan.Name), product - $($used_image.PurchasePlan.Product), publisher -$($used_image.PurchasePlan.Publisher)."
 				Add-Content -Value "$($indents[3])^plan^:" -Path $jsonFile
