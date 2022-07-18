@@ -199,9 +199,16 @@ class OperatingSystem:
         ...
 
     @classmethod
+    @retry(tries=10, delay=6)
     def _get_detect_string(cls, node: Any) -> Iterable[str]:
         typed_node: Node = node
-        cmd_result = typed_node.execute(cmd="lsb_release -d", no_error_log=True)
+        try:
+            cmd_result = typed_node.execute(
+                cmd="lsb_release -d", no_error_log=True, timeout=60
+            )
+        except Exception as identifier:
+            typed_node.close()
+            raise identifier
         yield get_matched_str(cmd_result.stdout, cls.__lsb_release_pattern)
 
         cmd_result = typed_node.execute(cmd="cat /etc/os-release", no_error_log=True)
@@ -840,7 +847,7 @@ class Debian(Linux):
                     raise RepoNotExistException(self._node.os)
         result.assert_exit_code(message="\n".join(self.get_apt_error(result.stdout)))
 
-    @retry(tries=10, delay=5)
+    @retry(tries=30, delay=10)
     def _install_packages(
         self,
         packages: List[str],
@@ -875,6 +882,7 @@ class Debian(Linux):
             command, shell=True, sudo=True, timeout=timeout
         )
         # get error lines.
+<<<<<<< HEAD
         install_result.assert_exit_code(
             0,
             f"Failed to install {packages}, "
@@ -882,6 +890,17 @@ class Debian(Linux):
             + "\n".join(self.get_apt_error(install_result.stdout))
             + "\n",
         )
+=======
+        if install_result.exit_code != 0:
+            self._initialize_package_installation()
+            install_result.assert_exit_code(
+                0,
+                f"Failed to install {packages}, "
+                f"please check the package name and repo are correct or not.\n"
+                + "\n".join(self.get_apt_error(install_result.stdout))
+                + "\n",
+            )
+>>>>>>> 35c6f976... fix hibernate
 
     def _package_exists(self, package: str) -> bool:
         command = "dpkg --get-selections"

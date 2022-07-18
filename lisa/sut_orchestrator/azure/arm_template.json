@@ -496,7 +496,7 @@
                             "managedDisk": "[if(not(equals(parameters('node')['disk_type'], 'Ephemeral')), json(concat('{\"storageAccountType\": \"',parameters('node')['disk_type'],'\"}')), json('null'))]",
                             "caching": "[if(equals(parameters('node')['disk_type'], 'Ephemeral'), 'ReadOnly', 'ReadWrite')]",
                             "createOption": "FromImage",
-                            "diskSizeGB": "[parameters('node')['osdisk_size_in_gb']]"
+                            "diskSizeGB": 138
                         }
                     }
                 },
