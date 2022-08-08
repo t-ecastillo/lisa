@@ -77,12 +77,6 @@ class AzureFeatureMixin:
 
 
 class StartStop(AzureFeatureMixin, features.StartStop):
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        return schema.FeatureSettings.create(cls.name())
-
     def _stop(
         self,
         wait: bool = True,
@@ -230,12 +224,6 @@ class SerialConsole(AzureFeatureMixin, features.SerialConsole):
         super()._initialize(*args, **kwargs)
         self._initialize_information(self._node)
         self._serial_console_initialized: bool = False
-
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        return schema.FeatureSettings.create(cls.name())
 
     @retry(tries=3, delay=5)
     def write(self, data: str) -> None:
@@ -488,22 +476,6 @@ class Gpu(AzureFeatureMixin, features.Gpu):
             )
         return driver_list
 
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        raw_capabilities: Any = kwargs.get("raw_capabilities")
-        node_space = kwargs.get("node_space")
-
-        assert isinstance(node_space, schema.NodeSpace), f"actual: {type(node_space)}"
-
-        value = raw_capabilities.get("GPUs", None)
-        if value:
-            node_space.gpu_count = int(value)
-            return schema.FeatureSettings.create(cls.name())
-
-        return None
-
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         super()._initialize(*args, **kwargs)
         self._initialize_information(self._node)
@@ -539,18 +511,6 @@ class Infiniband(AzureFeatureMixin, features.Infiniband):
         arm_parameters.availability_set_properties["platformFaultDomainCount"] = 1
         arm_parameters.availability_set_properties["platformUpdateDomainCount"] = 1
         arm_parameters.use_availability_sets = True
-
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        raw_capabilities: Any = kwargs.get("raw_capabilities")
-
-        value = raw_capabilities.get("RdmaEnabled", None)
-        if value and eval(value) is True:
-            return schema.FeatureSettings.create(cls.name())
-
-        return None
 
     def is_over_sriov(self) -> bool:
         lspci = self._node.tools[Lspci]
@@ -1218,12 +1178,6 @@ _disk_type_mapping: Dict[schema.DiskType, str] = {
 
 
 class Resize(AzureFeatureMixin, features.Resize):
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        return schema.FeatureSettings.create(cls.name())
-
     def resize(
         self, resize_action: ResizeAction = ResizeAction.IncreaseCoreCount
     ) -> schema.NodeSpace:
@@ -1354,18 +1308,6 @@ class Hibernation(AzureFeatureMixin, features.Hibernation):
         self._initialize_information(self._node)
 
     @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        raw_capabilities: Any = kwargs.get("raw_capabilities")
-
-        value = raw_capabilities.get("HibernationSupported", None)
-        if value and eval(value) is True:
-            return schema.FeatureSettings.create(cls.name())
-
-        return None
-
-    @classmethod
     def _enable_hibernation(cls, *args: Any, **kwargs: Any) -> None:
         parameters: Any = kwargs.get("arm_parameters")
         if parameters.use_availability_sets:
@@ -1397,18 +1339,6 @@ class SecurityProfile(AzureFeatureMixin, features.SecurityProfile):
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         super()._initialize(*args, **kwargs)
         self._initialize_information(self._node)
-
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        raw_capabilities: Any = kwargs.get("raw_capabilities")
-
-        value = raw_capabilities.get("HyperVGenerations", None)
-        if value and "V2" in str(value):
-            return schema.FeatureSettings.create(cls.name())
-
-        return None
 
     @classmethod
     def _enable_secure_boot(cls, *args: Any, **kwargs: Any) -> None:
@@ -1444,80 +1374,12 @@ class IsolatedResource(AzureFeatureMixin, features.IsolatedResource):
     )
 
     @classmethod
-    def create_setting(
+    def check_supported(
         cls, *args: Any, **kwargs: Any
     ) -> Optional[schema.FeatureSettings]:
         resource_sku: Any = kwargs.get("resource_sku")
 
         if resource_sku.name in cls.supported_vm_sizes:
             return schema.FeatureSettings.create(cls.name())
-
-        return None
-
-
-class ACC(AzureFeatureMixin, features.ACC):
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        resource_sku: Any = kwargs.get("resource_sku")
-
-        if resource_sku.family in ["standardDCSv2Family", "standardDCSv3Family"]:
-            return schema.FeatureSettings.create(cls.name())
-        return None
-
-
-class NestedVirtualization(AzureFeatureMixin, features.NestedVirtualization):
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        resource_sku: Any = kwargs.get("resource_sku")
-
-        # add vm which support nested virtualization
-        # https://docs.microsoft.com/en-us/azure/virtual-machines/acu
-        if resource_sku.family in [
-            "standardDv3Family",
-            "standardDSv3Family",
-            "standardDv4Family",
-            "standardDSv4Family",
-            "standardDDv4Family",
-            "standardDDSv4Family",
-            "standardEv3Family",
-            "standardESv3Family",
-            "standardEv4Family",
-            "standardESv4Family",
-            "standardEDv4Family",
-            "standardEDSv4Family",
-            "standardFSv2Family",
-            "standardMSFamily",
-            "standardMSMediumMemoryv2Family",
-        ]:
-            return schema.FeatureSettings.create(cls.name())
-        return None
-
-
-class Nvme(AzureFeatureMixin, features.Nvme):
-    @classmethod
-    def create_setting(
-        cls, *args: Any, **kwargs: Any
-    ) -> Optional[schema.FeatureSettings]:
-        resource_sku: Any = kwargs.get("resource_sku")
-        node_space: Any = kwargs.get("node_space")
-
-        assert isinstance(node_space, schema.NodeSpace), f"actual: {type(node_space)}"
-        # add vm which support nested virtualization
-        # https://docs.microsoft.com/en-us/azure/virtual-machines/acu
-        if resource_sku.family in [
-            "standardLSv2Family",
-        ]:
-            # refer https://docs.microsoft.com/en-us/azure/virtual-machines/lsv2-series # noqa: E501
-            # NVMe disk count = vCPU / 8
-            nvme = features.NvmeSettings()
-            assert isinstance(
-                node_space.core_count, int
-            ), f"actual: {node_space.core_count}"
-            nvme.disk_count = int(node_space.core_count / 8)
-            return nvme
 
         return None

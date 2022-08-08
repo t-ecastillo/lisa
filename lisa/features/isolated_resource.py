@@ -1,6 +1,9 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 
+from typing import Any, Optional
+
+from lisa import schema
 from lisa.feature import Feature
 
 FEATURE_NAME_ISOLATED_RESOURCE = "isolated_resource"
@@ -22,3 +25,12 @@ class IsolatedResource(Feature):
 
     def enabled(self) -> bool:
         return True
+
+    @classmethod
+    def check_supported(
+        cls, *args: Any, **kwargs: Any
+    ) -> Optional[schema.FeatureSettings]:
+        """
+        It's called in platform to check if a node support the feature or not.
+        """
+        return None

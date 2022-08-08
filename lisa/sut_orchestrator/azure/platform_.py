@@ -40,8 +40,10 @@ from dataclasses_json import dataclass_json
 from marshmallow import fields, validate
 from retry import retry
 
+import lisa.features as base_features
 from lisa import feature, schema, search_space
 from lisa.environment import Environment
+from lisa.features import NvmeSettings
 from lisa.node import Node, RemoteNode, local
 from lisa.platform_ import Platform
 from lisa.secret import PATTERN_GUID, add_secret
@@ -335,8 +337,8 @@ class AzurePlatform(Platform):
         return [
             features.Disk,
             features.Gpu,
-            features.Nvme,
-            features.NestedVirtualization,
+            base_features.Nvme,
+            base_features.NestedVirtualization,
             features.SerialConsole,
             features.NetworkInterface,
             features.Resize,
@@ -344,7 +346,7 @@ class AzurePlatform(Platform):
             features.Infiniband,
             features.Hibernation,
             features.SecurityProfile,
-            features.ACC,
+            base_features.ACC,
             features.IsolatedResource,
         ]
 
@@ -365,149 +367,147 @@ class AzurePlatform(Platform):
         3. check capability for each node by order of pattern.
         4. get min capability for each match
         """
-        is_success: bool = True
 
-        if environment.runbook.nodes_requirement:
-            is_success = False
-            nodes_requirement = environment.runbook.nodes_requirement
-            node_count = len(nodes_requirement)
-            # fills predefined locations here.
-            predefined_caps: List[Any] = [None] * node_count
-            # make sure all vms are in same location.
-            predefined_cost: int = 0
+        if not environment.runbook.nodes_requirement:
+            return True
 
-            for req in nodes_requirement:
-                # covert to azure node space, so the azure extensions can be loaded.
-                _convert_to_azure_node_space(req)
+        nodes_requirement = environment.runbook.nodes_requirement
 
-            existing_location = _get_existing_location(nodes_requirement)
+        # covert to azure node space, so the azure extensions can be loaded.
+        for req in nodes_requirement:
+            _convert_to_azure_node_space(req)
 
-            if existing_location:
-                locations = [existing_location]
-            else:
-                locations = LOCATIONS
+        is_success: bool = False
+        node_count = len(nodes_requirement)
+        # fills predefined locations here.
+        predefined_caps: List[Any] = [None] * node_count
+        # make sure all vms are in same location.
+        predefined_cost: int = 0
 
-            # check eligible locations
-            found_or_skipped = False
-            for location_name in locations:
-                predefined_cost = 0
-                predefined_caps = [None] * node_count
-                for req_index, req in enumerate(nodes_requirement):
-                    found_or_skipped = False
-                    node_runbook = req.get_extended_runbook(AzureNodeSchema, AZURE)
-                    if not node_runbook.vm_size:
-                        # not to check, if no vm_size set
-                        found_or_skipped = True
-                        continue
+        # get eligible locations
+        locations = _get_allowed_locations(nodes_requirement)
 
-                    # find predefined vm size on all available's.
-                    location_info: AzureLocation = self._get_location_info(
-                        location_name, log
-                    )
-                    matched_score: float = 0
-                    matched_cap: Optional[AzureCapability] = None
-                    matcher = SequenceMatcher(None, node_runbook.vm_size.lower(), "")
-                    for azure_cap in location_info.capabilities:
-                        matcher.set_seq2(azure_cap.vm_size.lower())
-                        if (
-                            node_runbook.vm_size.lower() in azure_cap.vm_size.lower()
-                            and matched_score < matcher.ratio()
-                        ):
-                            matched_cap = azure_cap
-                            matched_score = matcher.ratio()
-                    if matched_cap:
-                        # If max capability is set, use the max capability,
-                        # instead of the real capability. It needs to be in the
-                        # loop, to find supported locations.
-                        if node_runbook.maximize_capability:
-                            matched_cap = self._generate_max_capability(
-                                node_runbook.vm_size, location_name
-                            )
-
-                        predefined_cost += matched_cap.estimated_cost
-
-                        min_cap = self._generate_min_capability(
-                            req, matched_cap, location_name
-                        )
-
-                        if not existing_location:
-                            existing_location = location_name
-                        predefined_caps[req_index] = min_cap
-                        found_or_skipped = True
-                    else:
-                        # if not found any, skip and try next location
-                        break
-                if found_or_skipped:
-                    # if found all, skip other locations
-                    break
-            if not found_or_skipped:
-                # no location/vm_size meets requirement, so generate mockup to
-                # continue to test. It applies to some preview vm_size may not
-                # be listed by API.
-                location = next((x for x in locations))
-                for req_index, req in enumerate(nodes_requirement):
-                    if not node_runbook.vm_size or predefined_caps[req_index]:
-                        continue
-
-                    log.info(
-                        f"Cannot find vm_size {node_runbook.vm_size} in {location}. "
-                        f"Mockup capability to run tests."
-                    )
-                    mock_up_capability = self._generate_max_capability(
-                        node_runbook.vm_size, location
-                    )
-                    min_cap = self._generate_min_capability(
-                        req, mock_up_capability, location
-                    )
-                    predefined_caps[req_index] = min_cap
-
-            for location_name in locations:
-                # in each location, all node must be found
-                # fill them as None and check after met capability
-                found_capabilities: List[Any] = list(predefined_caps)
-
-                # skip unmatched location
-                if existing_location and existing_location != location_name:
+        found_or_skipped = False
+        matched_location = ""
+        for location_name in locations:
+            predefined_cost = 0
+            predefined_caps = [None] * node_count
+            for req_index, req in enumerate(nodes_requirement):
+                found_or_skipped = False
+                node_runbook = req.get_extended_runbook(AzureNodeSchema, AZURE)
+                if not node_runbook.vm_size:
+                    # not to check, if no vm_size set
+                    found_or_skipped = True
                     continue
 
-                estimated_cost: int = 0
-                location_caps = self.get_eligible_vm_sizes(location_name, log)
-                for req_index, req in enumerate(nodes_requirement):
-                    for azure_cap in location_caps:
-                        if found_capabilities[req_index]:
-                            # found, so skipped
-                            break
-                        check_result = req.check(azure_cap.capability)
-                        if check_result.result:
-                            min_cap = self._generate_min_capability(
-                                req, azure_cap, azure_cap.location
-                            )
+                # find predefined vm size on all available's.
+                location_info: AzureLocation = self._get_location_info(
+                    location_name, log
+                )
+                matched_score: float = 0
+                matched_cap: Optional[AzureCapability] = None
+                matcher = SequenceMatcher(None, node_runbook.vm_size.lower(), "")
+                for azure_cap in location_info.capabilities:
+                    matcher.set_seq2(azure_cap.vm_size.lower())
+                    if (
+                        node_runbook.vm_size.lower() in azure_cap.vm_size.lower()
+                        and matched_score < matcher.ratio()
+                    ):
+                        matched_cap = azure_cap
+                        matched_score = matcher.ratio()
+                if matched_cap:
+                    # If max capability is set, use the max capability,
+                    # instead of the real capability. It needs to be in the
+                    # loop, to find supported locations.
+                    if node_runbook.maximize_capability:
+                        matched_cap = self._generate_max_capability(
+                            node_runbook.vm_size, location_name
+                        )
 
-                            estimated_cost += azure_cap.estimated_cost
+                    predefined_cost += matched_cap.estimated_cost
 
-                            found_capabilities[req_index] = min_cap
-                    if all(x for x in found_capabilities):
-                        break
-
-                if all(x for x in found_capabilities):
-                    # all found and replace current requirement
-                    environment.runbook.nodes_requirement = found_capabilities
-                    environment.cost = estimated_cost + predefined_cost
-                    is_success = True
-                    log.debug(
-                        f"requirement meet, "
-                        f"cost: {environment.cost}, "
-                        f"cap: {environment.runbook.nodes_requirement}"
+                    min_cap = self._generate_min_capability(
+                        req, matched_cap, location_name
                     )
+
+                    if not matched_location:
+                        matched_location = location_name
+                    predefined_caps[req_index] = min_cap
+                    found_or_skipped = True
+                else:
+                    # if not found any, skip and try next location
+                    break
+            if found_or_skipped:
+                # if found all, skip other locations
+                break
+        if not found_or_skipped:
+            # no location/vm_size meets requirement, so generate mockup to
+            # continue to test. It applies to some preview vm_size may not
+            # be listed by API.
+            location = next((x for x in locations))
+            for req_index, req in enumerate(nodes_requirement):
+                if not node_runbook.vm_size or predefined_caps[req_index]:
+                    continue
+
+                log.info(
+                    f"Cannot find vm_size {node_runbook.vm_size} in {location}. "
+                    f"Mockup capability to run tests."
+                )
+                mock_up_capability = self._generate_max_capability(
+                    node_runbook.vm_size, location
+                )
+                min_cap = self._generate_min_capability(
+                    req, mock_up_capability, location
+                )
+                predefined_caps[req_index] = min_cap
+
+        # skip unmatched location
+        if matched_location:
+            locations = [matched_location]
+
+        for location_name in locations:
+            # in each location, all node must be found
+            # fill them as None and check after met capability
+            found_capabilities: List[Any] = list(predefined_caps)
+
+            estimated_cost: int = 0
+            location_caps = self.get_eligible_vm_sizes(location_name, log)
+            for req_index, req in enumerate(nodes_requirement):
+                for azure_cap in location_caps:
+                    if found_capabilities[req_index]:
+                        # found, so skipped
+                        break
+                    check_result = req.check(azure_cap.capability)
+                    if check_result.result:
+                        min_cap = self._generate_min_capability(
+                            req, azure_cap, azure_cap.location
+                        )
+
+                        estimated_cost += azure_cap.estimated_cost
+
+                        found_capabilities[req_index] = min_cap
+                if all(x for x in found_capabilities):
                     break
 
-            for req in nodes_requirement:
-                node_runbook = req.get_extended_runbook(AzureNodeSchema, AZURE)
-                if node_runbook.location and node_runbook.marketplace:
-                    # resolve Latest to specified version
-                    node_runbook.marketplace = self._parse_marketplace_image(
-                        node_runbook.location, node_runbook.marketplace
-                    )
+            if all(x for x in found_capabilities):
+                # all found and replace current requirement
+                environment.runbook.nodes_requirement = found_capabilities
+                environment.cost = estimated_cost + predefined_cost
+                is_success = True
+                log.debug(
+                    f"requirement meet, "
+                    f"cost: {environment.cost}, "
+                    f"cap: {environment.runbook.nodes_requirement}"
+                )
+                break
+
+        for req in nodes_requirement:
+            node_runbook = req.get_extended_runbook(AzureNodeSchema, AZURE)
+            if node_runbook.location and node_runbook.marketplace:
+                # resolve Latest to specified version
+                node_runbook.marketplace = self._parse_marketplace_image(
+                    node_runbook.location, node_runbook.marketplace
+                )
         return is_success
 
     def _deploy_environment(self, environment: Environment, log: Logger) -> None:
@@ -1558,78 +1558,162 @@ class AzurePlatform(Platform):
         node_space.network_interface.data_path = search_space.SetSpace[
             schema.NetworkDataPath
         ](is_allow_set=True, items=[])
+        vcpus = 0
+        vcpus_available = 0
 
         # fill supported features
         azure_raw_capabilities: Dict[str, str] = {}
         for sku_capability in resource_sku.capabilities:
             # prevent to loop in every feature
             azure_raw_capabilities[sku_capability.name] = sku_capability.value
+        for supported_feature in self.supported_features():
+            if supported_feature.name() in [
+                features.Disk.name(),
+                features.NetworkInterface.name(),
+            ]:
+                # Skip the disk and network interfaces features. They will be
+                # handled by node_space directly.
+                continue
 
-        # calculate cpu count. Some vm sizes, like Standard_HC44rs, doesn't have
-        # vCPUsAvailable, so use vCPUs.
-        vcpus_available = int(azure_raw_capabilities.get("vCPUsAvailable", "0"))
+            feature_setting = supported_feature.check_supported(
+                raw_capabilities=azure_raw_capabilities, resource_sku=resource_sku
+            )
+            if feature_setting:
+                node_space.features.add(feature_setting)
+
+        for sku_capability in resource_sku.capabilities:
+            name = sku_capability.name
+            if name == "vCPUsAvailable":
+                vcpus_available = int(sku_capability.value)
+            elif name == "vCPUs":
+                vcpus = int(sku_capability.value)
+            elif name == "MaxDataDiskCount":
+                node_space.disk.max_data_disk_count = int(sku_capability.value)
+                node_space.disk.data_disk_count = search_space.IntRange(
+                    max=node_space.disk.max_data_disk_count
+                )
+            elif name == "MemoryGB":
+                node_space.memory_mb = int(float(sku_capability.value) * 1024)
+            elif name == "MaxNetworkInterfaces":
+                # set a min value for nic_count work around for an azure python sdk bug
+                # nic_count is 0 when get capability for some sizes e.g. Standard_D8a_v3
+                sku_nic_count = int(sku_capability.value)
+                if sku_nic_count == 0:
+                    sku_nic_count = 1
+                node_space.network_interface.nic_count = search_space.IntRange(
+                    min=1, max=sku_nic_count
+                )
+                node_space.network_interface.max_nic_count = sku_nic_count
+            elif name == "GPUs":
+                node_space.gpu_count = int(sku_capability.value)
+                # update features list if gpu feature is supported
+                node_space.features.add(
+                    schema.FeatureSettings.create(features.Gpu.name())
+                )
+            elif name == "AcceleratedNetworkingEnabled":
+                # refer https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series#configuration # noqa: E501
+                # https://docs.microsoft.com/en-us/azure/virtual-machines/ncv2-series
+                # https://docs.microsoft.com/en-us/azure/virtual-machines/ncv3-series
+                # https://docs.microsoft.com/en-us/azure/virtual-machines/nd-series
+                # below VM size families don't support `Accelerated Networking`
+                # but API return `True`, fix this issue temporarily
+                # will revert it till bug fixed.
+                if resource_sku.family in [
+                    "standardDCSv2Family",
+                    "standardNCSv2Family",
+                    "standardNCSv3Family",
+                    "standardNDSFamily",
+                ]:
+                    continue
+                if eval(sku_capability.value) is True:
+                    # update data path types if sriov feature is supported
+                    node_space.network_interface.data_path.add(
+                        schema.NetworkDataPath.Sriov
+                    )
+            elif name == "PremiumIO":
+                if eval(sku_capability.value) is True:
+                    node_space.disk.disk_type.add(schema.DiskType.PremiumSSDLRS)
+            elif name == "EphemeralOSDiskSupported":
+                if eval(sku_capability.value) is True:
+                    node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
+            elif name == "RdmaEnabled":
+                if eval(sku_capability.value) is True:
+                    node_space.features.add(
+                        schema.FeatureSettings.create(features.Infiniband.name())
+                    )
+            elif name == "HibernationSupported":
+                if eval(sku_capability.value) is True:
+                    node_space.features.add(
+                        schema.FeatureSettings.create(features.Hibernation.name())
+                    )
+            elif name == "HyperVGenerations":
+                if "V2" in str(sku_capability.value):
+                    node_space.features.add(
+                        schema.FeatureSettings.create(features.SecurityProfile.name())
+                    )
+
+        # Some vm sizes, like Standard_HC44rs, doesn't have vCPUsAvailable, so
+        # use vcpus.
         if vcpus_available:
             node_space.core_count = vcpus_available
         else:
-            node_space.core_count = int(azure_raw_capabilities.get("vCPUs", "0"))
+            node_space.core_count = vcpus
 
-        memory_value = azure_raw_capabilities.get("MemoryGB", None)
-        if memory_value:
-            node_space.memory_mb = int(float(memory_value) * 1024)
-
-        max_disk_count = azure_raw_capabilities.get("MaxDataDiskCount", None)
-        if max_disk_count:
-            node_space.disk.max_data_disk_count = int(max_disk_count)
-            node_space.disk.data_disk_count = search_space.IntRange(
-                max=node_space.disk.max_data_disk_count
+        # add acc feature if it's supported
+        if resource_sku.family in ["standardDCSv2Family", "standardDCSv3Family"]:
+            node_space.features.add(
+                schema.FeatureSettings.create(base_features.ACC.name())
             )
 
-        max_nic_count = azure_raw_capabilities.get("MaxNetworkInterfaces", None)
-        if max_nic_count:
-            # set a min value for nic_count work around for an azure python sdk bug
-            # nic_count is 0 when get capability for some sizes e.g. Standard_D8a_v3
-            sku_nic_count = int(max_nic_count)
-            if sku_nic_count == 0:
-                sku_nic_count = 1
-            node_space.network_interface.nic_count = search_space.IntRange(
-                min=1, max=sku_nic_count
+        # add vm which support nested virtualization
+        # https://docs.microsoft.com/en-us/azure/virtual-machines/acu
+        if resource_sku.family in [
+            "standardDv3Family",
+            "standardDSv3Family",
+            "standardDv4Family",
+            "standardDSv4Family",
+            "standardDDv4Family",
+            "standardDDSv4Family",
+            "standardEv3Family",
+            "standardESv3Family",
+            "standardEv4Family",
+            "standardESv4Family",
+            "standardEDv4Family",
+            "standardEDSv4Family",
+            "standardFSv2Family",
+            "standardMSFamily",
+            "standardMSMediumMemoryv2Family",
+        ]:
+            node_space.features.add(
+                schema.FeatureSettings.create(base_features.NestedVirtualization.name())
             )
-            node_space.network_interface.max_nic_count = sku_nic_count
 
-        premium_io_supported = azure_raw_capabilities.get("PremiumIO", None)
-        if premium_io_supported and eval(premium_io_supported) is True:
-            node_space.disk.disk_type.add(schema.DiskType.PremiumSSDLRS)
-
-        ephemeral_supported = azure_raw_capabilities.get(
-            "EphemeralOSDiskSupported", None
-        )
-        if ephemeral_supported and eval(ephemeral_supported) is True:
-            node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
-
-        # set AN
-        an_enabled = azure_raw_capabilities.get("AcceleratedNetworkingEnabled", None)
-        if an_enabled and eval(an_enabled) is True:
-            # refer
-            # https://docs.microsoft.com/en-us/azure/virtual-machines/dcv2-series#configuration
-            # https://docs.microsoft.com/en-us/azure/virtual-machines/ncv2-series
-            # https://docs.microsoft.com/en-us/azure/virtual-machines/ncv3-series
-            # https://docs.microsoft.com/en-us/azure/virtual-machines/nd-series
-            # below VM size families don't support `Accelerated Networking` but
-            # API return `True`, fix this issue temporarily will revert it till
-            # bug fixed.
-            if resource_sku.family not in [
-                "standardDCSv2Family",
-                "standardNCSv2Family",
-                "standardNCSv3Family",
-                "standardNDSFamily",
-            ]:
-                # update data path types if sriov feature is supported
-                node_space.network_interface.data_path.add(schema.NetworkDataPath.Sriov)
+        if resource_sku.family in ["standardLSv2Family"]:
+            # refer https://docs.microsoft.com/en-us/azure/virtual-machines/lsv2-series # noqa: E501
+            # NVMe disk count = vCPU / 8
+            nvme = NvmeSettings()
+            assert isinstance(
+                node_space.core_count, int
+            ), f"actual: {node_space.core_count}"
+            nvme.disk_count = int(node_space.core_count / 8)
+            node_space.features.add(nvme)
 
         # for some new sizes, there is no MaxNetworkInterfaces capability
         # and we have to set a default value for max_nic_count
         if not node_space.network_interface.max_nic_count:
             node_space.network_interface.max_nic_count = 8
+
+        # For Dp/Ep_v5 VM size, the `Accelerated Networking` is required. But the API
+        # return `False`. Fix this issue temporarily and revert it till bug fixed
+        if resource_sku.family in [
+            "standardDPDSv5Family",
+            "standardDPLDSv5Family",
+            "standardDPLSv5Family",
+            "standardDPSv5Family",
+            "standardEPDSv5Family",
+            "standardEPSv5Family",
+        ]:
+            node_space.network_interface.data_path.add(schema.NetworkDataPath.Sriov)
 
         # some vm size do not have resource disk present
         # https://docs.microsoft.com/en-us/azure/virtual-machines/azure-vms-no-temp-disk
@@ -1652,23 +1736,14 @@ class AzurePlatform(Platform):
         else:
             node_space.disk.has_resource_disk = True
 
-        for supported_feature in self.supported_features():
-            if supported_feature.name() in [
-                features.Disk.name(),
-                features.NetworkInterface.name(),
-            ]:
-                # Skip the disk and network interfaces features. They will be
-                # handled by node_space directly.
-                continue
-
-            feature_setting = supported_feature.create_setting(
-                raw_capabilities=azure_raw_capabilities,
-                resource_sku=resource_sku,
-                node_space=node_space,
-            )
-            if feature_setting:
-                node_space.features.add(feature_setting)
-
+        # all nodes support following features
+        node_space.features.update(
+            [
+                schema.FeatureSettings.create(features.StartStop.name()),
+                schema.FeatureSettings.create(features.SerialConsole.name()),
+                schema.FeatureSettings.create(features.Resize.name()),
+            ]
+        )
         node_space.disk.disk_type.add(schema.DiskType.StandardHDDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardSSDLRS)
         node_space.network_interface.data_path.add(schema.NetworkDataPath.Synthetic)
@@ -1897,7 +1972,7 @@ class AzurePlatform(Platform):
         # Apply azure specified values. They will pass into arm template
         azure_node_runbook = min_cap.get_extended_runbook(AzureNodeSchema, AZURE)
         if azure_node_runbook.location:
-            assert azure_node_runbook.location == location, (
+            assert location in azure_node_runbook.location, (
                 f"predefined location [{azure_node_runbook.location}] "
                 f"must be same as "
                 f"cap location [{location}]"
@@ -2187,22 +2262,29 @@ def _convert_to_azure_node_space(node_space: schema.NodeSpace) -> None:
             )
 
 
-def _get_existing_location(nodes_requirement: List[schema.NodeSpace]) -> str:
-    existing_location: str = ""
+def _get_allowed_locations(nodes_requirement: List[schema.NodeSpace]) -> List[str]:
+    existing_locations_str: str = ""
     for req in nodes_requirement:
         # check locations
         # apply azure specified values
         # they will pass into arm template
         node_runbook: AzureNodeSchema = req.get_extended_runbook(AzureNodeSchema, AZURE)
         if node_runbook.location:
-            if existing_location:
+            if existing_locations_str:
                 # if any one has different location, raise an exception.
-                if existing_location != node_runbook.location:
+                if existing_locations_str != node_runbook.location:
                     raise LisaException(
                         f"predefined node must be in same location, "
-                        f"previous: {existing_location}, "
+                        f"previous: {existing_locations_str}, "
                         f"found: {node_runbook.location}"
                     )
             else:
-                existing_location = node_runbook.location
-    return existing_location
+                existing_locations_str = node_runbook.location
+
+    if existing_locations_str:
+        existing_locations = existing_locations_str.split(",")
+        existing_locations = [x.strip() for x in existing_locations]
+    else:
+        existing_locations = LOCATIONS[:]
+
+    return existing_locations
