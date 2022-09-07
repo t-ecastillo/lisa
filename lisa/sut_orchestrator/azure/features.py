@@ -1445,41 +1445,41 @@ class SecurityProfile(AzureFeatureMixin, features.SecurityProfile):
 
     @classmethod
     def on_before_deployment(cls, *args: Any, **kwargs: Any) -> None:
-        settings = cast(SecurityProfileSettings, kwargs.get("settings"))
-        if SecurityProfileType.Standard != settings.security_profile:
-            cls._enable_secure_boot(*args, **kwargs)
+        # settings = cast(SecurityProfileSettings, kwargs.get("settings"))
+        # if SecurityProfileType.Standard != settings.security_profile:
+        cls._enable_secure_boot(*args, **kwargs)
 
     @classmethod
     def _enable_secure_boot(cls, *args: Any, **kwargs: Any) -> None:
-        settings: Any = kwargs.get("settings")
+        # settings: Any = kwargs.get("settings")
         template: Any = kwargs.get("template")
         log = cast(Logger, kwargs.get("log"))
         resources = template["resources"]
         virtual_machines = find_by_name(resources, "Microsoft.Compute/virtualMachines")
-        if SecurityProfileType.Standard == settings.security_profile:
-            log.debug("Security profile set to none. Arm template will not be updated.")
-            return
-        elif SecurityProfileType.Boot == settings.security_profile:
-            log.debug("Security Profile set to secure boot. Updating arm template.")
-            security_type = "TrustedLaunch"
-        elif SecurityProfileType.CVM == settings.security_profile:
-            log.debug("Security Profile set to CVM. Updating arm template.")
-            security_type = "ConfidentialVM"
+        # if SecurityProfileType.Standard == settings.security_profile:
+        #     log.debug("Security profile set to none. Arm template will not be updated.")
+        #     return
+        # elif SecurityProfileType.Boot == settings.security_profile:
+        log.debug("Security Profile set to secure boot. Updating arm template.")
+        security_type = "TrustedLaunch"
+        # elif SecurityProfileType.CVM == settings.security_profile:
+        #     log.debug("Security Profile set to CVM. Updating arm template.")
+        #     security_type = "ConfidentialVM"
 
-            virtual_machines["properties"]["storageProfile"]["osDisk"][
-                "managedDisk"
-            ] = (
-                "[if(not(equals(parameters('nodes')[copyIndex('vmCopy')]['disk_type'], "
-                "'Ephemeral')), json(concat('{\"storageAccountType\": \"',parameters"
-                "('nodes')[copyIndex('vmCopy')]['disk_type'],'\",\"securityProfile\":{"
-                '"securityEncryptionType": "VMGuestStateOnly"}}\')), json(\'null\'))]'
-            )
-        else:
-            raise LisaException(
-                "Security profile: not all requirements could be met. "
-                "Please check VM SKU capabilities, test requirements, "
-                "and runbook requirements."
-            )
+        #     virtual_machines["properties"]["storageProfile"]["osDisk"][
+        #         "managedDisk"
+        #     ] = (
+        #         "[if(not(equals(parameters('nodes')[copyIndex('vmCopy')]['disk_type'], "
+        #         "'Ephemeral')), json(concat('{\"storageAccountType\": \"',parameters"
+        #         "('nodes')[copyIndex('vmCopy')]['disk_type'],'\",\"securityProfile\":{"
+        #         '"securityEncryptionType": "VMGuestStateOnly"}}\')), json(\'null\'))]'
+        #     )
+        # else:
+        #     raise LisaException(
+        #         "Security profile: not all requirements could be met. "
+        #         "Please check VM SKU capabilities, test requirements, "
+        #         "and runbook requirements."
+        #     )
 
         virtual_machines["properties"].update(
             json.loads(
