@@ -882,7 +882,6 @@ class Debian(Linux):
             command, shell=True, sudo=True, timeout=timeout
         )
         # get error lines.
-<<<<<<< HEAD
         install_result.assert_exit_code(
             0,
             f"Failed to install {packages}, "
@@ -890,7 +889,7 @@ class Debian(Linux):
             + "\n".join(self.get_apt_error(install_result.stdout))
             + "\n",
         )
-=======
+
         if install_result.exit_code != 0:
             self._initialize_package_installation()
             install_result.assert_exit_code(
