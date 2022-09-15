@@ -899,7 +899,6 @@ class Debian(Linux):
                 + "\n".join(self.get_apt_error(install_result.stdout))
                 + "\n",
             )
->>>>>>> 35c6f976... fix hibernate
 
     def _package_exists(self, package: str) -> bool:
         command = "dpkg --get-selections"
