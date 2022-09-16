@@ -123,7 +123,7 @@ class AzureNodeSchema:
     )
     # for marketplace image, which need to accept terms
     purchase_plan: Optional[AzureVmPurchasePlanSchema] = AzureVmPurchasePlanSchema(
-        "pro-20_04-gen2", "0001-com-ubuntu-pro-microsoft", "canonical"
+        "pro-fips-20_04-gen2", "0001-com-ubuntu-pro-microsoft", "canonical"
     )
 
     # the linux and Windows has different settings. If it's not specified, it's
