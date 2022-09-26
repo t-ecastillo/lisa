@@ -331,9 +331,10 @@ class RepoLocation(BaseLocation):
             git.checkout(ref=runbook.ref, cwd=code_path)
 
         #commitids = git.list_commit_ids(cwd=code_path)
-        commitids = git.get_latest_commit_id(cwd=code_path)
-        self._log.info(f"Kernel HEAD is now at : {commitids[0]}")
+        #self._log.info(f"Kernel HEAD is now at : {commitids[0]}")
 
+        latest_commitid = git.get_latest_commit_id(cwd=code_path)
+        self._log.info(f"Kernel HEAD is now at : {latest_commitid[0]}")
         return code_path
 
 
