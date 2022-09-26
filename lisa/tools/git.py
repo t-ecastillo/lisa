@@ -174,7 +174,7 @@ class Git(Tool):
             cwd=cwd,
             force_run=True,
             expected_exit_code=0,
-            expected_exit_code_failure_message="Failed to fetch commit ids.",
+            expected_exit_code_failure_message=f"Failed to fetch commit ids. cwd={cwd}",
         )
         return filter_ansi_escape(result.stdout).splitlines()
 
