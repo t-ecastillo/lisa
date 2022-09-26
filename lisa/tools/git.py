@@ -174,6 +174,17 @@ class Git(Tool):
             cwd=cwd,
             force_run=True,
             expected_exit_code=0,
+            expected_exit_code_failure_message=f"Failed to fetch commit ids.",
+        )
+        return filter_ansi_escape(result.stdout).splitlines()
+
+    def get_latest_commit_id(self, cwd: pathlib.PurePath) -> List[str]:
+        result = self.run(
+            "--no-pager log -n 1 --pretty=format:%h",
+            shell=True,
+            cwd=cwd,
+            force_run=True,
+            expected_exit_code=0,
             expected_exit_code_failure_message=f"Failed to fetch commit ids. cwd={cwd}",
         )
         return filter_ansi_escape(result.stdout).splitlines()
