@@ -1388,10 +1388,7 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 			#endregion
 
 			#region Security Profile
-			$CurrentTestData.SetupConfig.SecureBoot = $true
-			$CurrentTestData.SetupConfig.vTPM = $true
-			$CurrentTestData.SetupConfig.SecurityType = "TrustedLaunch"
-			if ($CurrentTestData.SetupConfig.SecureBoot -or $CurrentTestData.SetupConfig.vTPM) {
+			if ($true) {
 				Add-Content -Value "$($indents[4])^securityProfile^: " -Path $jsonFile
 				Add-Content -Value "$($indents[4]){" -Path $jsonFile
 				Add-Content -Value "$($indents[5])^uefiSettings^: " -Path $jsonFile
@@ -1406,9 +1403,9 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 					Add-Content -Value "$($indents[6])^secureBootEnabled^: ^$($CurrentTestData.SetupConfig.SecureBoot)^," -Path $jsonFile
 					Add-Content -Value "$($indents[6])^vTPMEnabled^: ^$($CurrentTestData.SetupConfig.vTPM)^" -Path $jsonFile
 				}
-				if ($CurrentTestData.SetupConfig.SecurityType) {
+				if ($true) {
 					Add-Content -Value "$($indents[5])}," -Path $jsonFile
-					Add-Content -Value "$($indents[5])^securityType^: ^$($CurrentTestData.SetupConfig.SecurityType)^" -Path $jsonFile
+					Add-Content -Value "$($indents[5])^securityType^: ^TrustedLaunch^" -Path $jsonFile
 				}
 				else {
 					Add-Content -Value "$($indents[5])}" -Path $jsonFile
