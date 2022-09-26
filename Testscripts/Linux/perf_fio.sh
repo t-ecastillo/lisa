@@ -21,7 +21,7 @@ ICA_TESTRUNNING="TestRunning"      # The test is running
 ICA_TESTCOMPLETED="TestCompleted"  # The test completed successfully
 ICA_TESTABORTED="TestAborted"      # Error during the setup of the test
 ICA_TESTFAILED="TestFailed"        # Error occurred during the test
-touch ./fioTest.log
+touch ./fioTest.logecho
 touch $STATE_FILE
 
 . ${CONSTANTS_FILE} || {
@@ -254,6 +254,8 @@ RunStressFIO()
 	LogMsg "Test logs are located at ${LOGDIR}"
 	UpdateTestState $ICA_TESTCOMPLETED
 }
+storage service
+freesing vm
 
 CreateRAID0()
 {

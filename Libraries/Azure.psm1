@@ -1388,6 +1388,9 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 			#endregion
 
 			#region Security Profile
+			$CurrentTestData.SetupConfig.SecureBoot = $true
+			$CurrentTestData.SetupConfig.vTPM = $true
+			$CurrentTestData.SetupConfig.SecurityType = "TrustedLaunch"
 			if ($CurrentTestData.SetupConfig.SecureBoot -or $CurrentTestData.SetupConfig.vTPM) {
 				Add-Content -Value "$($indents[4])^securityProfile^: " -Path $jsonFile
 				Add-Content -Value "$($indents[4]){" -Path $jsonFile
