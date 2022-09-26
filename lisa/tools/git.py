@@ -174,7 +174,7 @@ class Git(Tool):
             cwd=cwd,
             force_run=True,
             expected_exit_code=0,
-            expected_exit_code_failure_message=f"Failed to fetch commit ids.",
+            expected_exit_code_failure_message=f"Failed to fetch commit ids!",
         )
         return filter_ansi_escape(result.stdout).splitlines()
 
@@ -185,7 +185,7 @@ class Git(Tool):
             cwd=cwd,
             force_run=True,
             expected_exit_code=0,
-            expected_exit_code_failure_message=f"Failed to fetch latest commit id.",
+            expected_exit_code_failure_message=f"Failed to fetch latest commit id!",
         )
         return filter_ansi_escape(result.stdout).splitlines()
 
