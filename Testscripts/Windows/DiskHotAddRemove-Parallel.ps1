@@ -69,7 +69,7 @@ function Main {
             $isASAP = Is-ASAP -username $user -password $password -ip $AllVMData.PublicIP -port $AllVMData.SSHPort
             Write-LogInfo "isASAP Output: $isASAP"
             if ($isASAP){
-                $diskPattern = "Disk /dev/nvme0n[1-3][0-9]|nvme0n[2-9]:"
+                $diskPattern = "Disk /dev/nvme0n[1-9][0-9]|nvme0n[2-9]:"
             }
             else {
                 $diskPattern = "Disk /dev/sd[a-z][a-z]|sd[c-z]:"
