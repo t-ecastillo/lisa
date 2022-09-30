@@ -535,7 +535,7 @@ function Get-AllHyperVDeployementData($HyperVGroupNames,$CurrentTestData,$RetryC
     foreach ($HyperVGroupName in $HyperVGroupNames.Split("^")) {
         $HyperVHost = $global:GlobalConfig.Global.Hyperv.Hosts.ChildNodes[$index].ServerName
         $index++
-        Write-LogInfo "Collecting $HyperVGroupName data.."
+        Write-LogInfo "Collecting $HyperVGroupName data from $HyperVHost.."
         $CurrentGroupData = Get-VMGroup -Name $HyperVGroupName -ComputerName $HyperVHost
         $ALLVMs.Add($CurrentGroupData.ComputerName, $CurrentGroupData.VMMembers)
     }
@@ -561,6 +561,7 @@ function Get-AllHyperVDeployementData($HyperVGroupNames,$CurrentTestData,$RetryC
                 $QuickVMNode.PublicIP = $VMNicProperties.IPAddresses | Where-Object {$_ -imatch "\b(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b"}
             } while(($CurrentRetryAttempt -lt $RetryCount) -and (!$QuickVMNode.PublicIP))
 
+            Write-LogInfo "Checking Public IP: $($QuickVMNode.PublicIP)"
             if ($QuickVMNode.PublicIP -and $QuickVMNode.PublicIP.Split("").Length -gt 1) {
                 $QuickVMNode.PublicIP = $QuickVMNode.PublicIP[0]
             }
@@ -575,6 +576,11 @@ function Get-AllHyperVDeployementData($HyperVGroupNames,$CurrentTestData,$RetryC
                 $QuickVMNode.HyperVGroupName = $VM.Groups.Name
                 $allDeployedVMs += $QuickVMNode
                 Write-LogInfo "Collected $($QuickVMNode.RoleName) from $($QuickVMNode.HyperVGroupName) data!"
+                Write-LogInfo "Public IP: $($QuickVMNode.PublicIP)"
+                Write-LogInfo "Internal IP: $($QuickVMNode.InternalIP)"
+                Write-LogInfo "Host: $($QuickVMNode.HyperVHost)"
+                Write-LogInfo "Generation: $($QuickVMNode.VMGeneration)"
+                Write-LogInfo "Object: $QuickVMNode"
             }
         }
     }
@@ -761,6 +767,9 @@ function Check-IP {
             }
             $VM.PublicIP = $publicIP
             $newVMData += $VM
+            Write-LogInfo "Public IP: $publicIP"
+            Write-LogInfo "VM: $VM"
+            Write-LogInfo "VMData: $newVMData"
         }
         break
     }
