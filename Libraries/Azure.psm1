@@ -1347,11 +1347,19 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 			# TODO Fix Purchase Plan for SIG images
 			if($SharedImageName -and !$VHDName) {
 				Write-LogInfo "SIG image name is: $SharedImageName"
-				if($SharedImageName -like "*almalinux*") {
+				if($SharedImageName -like "*almalinux-85*") {
 					Write-LogInfo "Adding Alma plan"
 					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
 					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
 					$used_image.PurchasePlan.Name = "8_5-gen2"
+					$used_image.PurchasePlan.Product = "almalinux"
+					$used_image.PurchasePlan.Publisher = "almalinux"
+				}
+				elseif($SharedImageName -like "*almalinux-9*") {
+					Write-LogInfo "Adding Alma plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "9-gen2"
 					$used_image.PurchasePlan.Product = "almalinux"
 					$used_image.PurchasePlan.Publisher = "almalinux"
 				}
