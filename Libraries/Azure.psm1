@@ -1371,6 +1371,38 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 					$used_image.PurchasePlan.Product = "flatcar-container-linux-free"
 					$used_image.PurchasePlan.Publisher = "kinvolk"
 				}
+				elseif ($SharedImageName -like "*RHEL-Test-Offer*") {
+					Write-LogInfo "Adding RHEL plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "rhek-8g-nvme-gen2"
+					$used_image.PurchasePlan.Product = "rhel_test_offers"
+					$used_image.PurchasePlan.Publisher = "redhat"
+				}
+				elseif ($SharedImageName -like "*RHEL79-Test-Offer*") {
+					Write-LogInfo "Adding RHEL plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "rhel-79-nvme-gen2"
+					$used_image.PurchasePlan.Product = "rhel_test_offers"
+					$used_image.PurchasePlan.Publisher = "redhat"
+				}
+				elseif ($SharedImageName -like "*RHEL86-Test-Offer*") {
+					Write-LogInfo "Adding RHEL plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "rhek-8g-nvme-gen2"
+					$used_image.PurchasePlan.Product = "rhel_test_offers"
+					$used_image.PurchasePlan.Publisher = "redhat"
+				}
+				elseif ($SharedImageName -like "*RHEL90-Test-Offer*") {
+					Write-LogInfo "Adding RHEL plan"
+					$used_image = [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachineImageDetail]::new()
+					$used_image.PurchasePlan = [Microsoft.Azure.Management.Compute.Models.PurchasePlan]::new()
+					$used_image.PurchasePlan.Name = "rhel90-nvme-gen2"
+					$used_image.PurchasePlan.Product = "rhel_test_offers"
+					$used_image.PurchasePlan.Publisher = "redhat"
+				}
 				else {
 					Write-LogInfo "Adding No plan"
 					$used_image = $null
@@ -1797,7 +1829,8 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 							$script:ARMImageVersions["$osImage"] = "$imagePublisher $imageOffer $imageSku $($allImageVersions[-1].Version)"
 						}
 						else {
-							Throw "Latest image version does not exist for '$imagePublisher $imageOffer $imageSku'"
+							#Throw "Latest image version does not exist for '$imagePublisher $imageOffer $imageSku'"
+							$script:ARMImageVersions["$osImage"] = "$imagePublisher $imageOffer $imageSku latest"
 						}
 					}
 					$CurrentTestData.SetupConfig.ARMImageName = $script:ARMImageVersions.$osImage
