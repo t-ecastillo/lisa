@@ -906,7 +906,7 @@ function Get-HostMemory($HvServer, [int]$RequestedMemory) {
     $bufferMemory = [int](0.1 * $totalMemory)
     # Get available memory and decrease the buffer from it
     # WORKAROUND: 'Get-Counter' will throw exception on Windows Client as Hyper-V host, so work around by Invoke-Command
-    $availableMemory = Invoke-Command -ComputerName $HvServer -ScriptBlock { [int](Get-Counter -Counter "\Memory\Available MBytes").CounterSamples[0].CookedValue }
+    $availableMemory = [int](Get-Counter -Counter "\Memory\Available MBytes").CounterSamples[0].CookedValue
     $availableMemory = $availableMemory - $bufferMemory
     # Check if there is enough memory to deploy the VM
     $availableMemoryAfterDeploy = $availableMemory - $RequestedMemory
