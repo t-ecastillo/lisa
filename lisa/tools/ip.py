@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 from assertpy import assert_that
 
@@ -211,3 +212,40 @@ class Ip(Tool):
 
         # start interface
         self.up(name)
+
+    def get_route(
+        self,
+        force_run: bool = True,
+        sudo: bool = False,
+        shell: bool = False,
+    ) -> str:
+        command = "route"
+        cmd_result = self.run(
+            command,
+            force_run=force_run,
+            sudo=sudo,
+            shell=shell,
+            expected_exit_code=0,
+            expected_exit_code_failure_message=f"fail to run {self.command} {command}",
+        )
+        return cmd_result.stdout
+
+    def get_ip_addr(
+        self,
+        nic_name: Optional[str] = None,
+        force_run: bool = True,
+        sudo: bool = False,
+        shell: bool = False,
+    ) -> str:
+        command = "addr show"
+        if nic_name:
+            command += f" {nic_name}"
+        cmd_result = self.run(
+            command,
+            force_run=force_run,
+            sudo=sudo,
+            shell=shell,
+            expected_exit_code=0,
+            expected_exit_code_failure_message=f"fail to run {self.command} {command}",
+        )
+        return cmd_result.stdout

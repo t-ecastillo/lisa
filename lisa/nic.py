@@ -233,19 +233,10 @@ class Nics(InitializableMixin):
         nic.bound_driver = nic.driver_sysfs_path.name
 
     def load_interface_info(self, nic_name: Optional[str] = None) -> None:
-        command = "/sbin/ip addr show"
-        if nic_name:
-            command += f" {nic_name}"
-        result = self._node.execute(
-            command,
-            shell=True,
-            expected_exit_code=0,
-            expected_exit_code_failure_message=(
-                f"Could not run {command} on node {self._node.name}"
-            ),
-        )
+        ip = self._node.tools[Ip]
+        result = ip.get_ip_addr(nic_name=nic_name, force_run=True, sudo=True)
         entries = find_groups_in_lines(
-            result.stdout, self.__ip_addr_show_regex, single_line=False
+            result, self.__ip_addr_show_regex, single_line=False
         )
         found_nics = []
         for entry in entries:
@@ -421,15 +412,13 @@ class Nics(InitializableMixin):
         ).is_greater_than(0)
 
     def _get_default_nic(self) -> None:
-        cmd = "/sbin/ip route"
-        ip_route_result = self._node.execute(cmd, shell=True, sudo=True)
-        ip_route_result.assert_exit_code()
-        assert_that(ip_route_result.stdout).is_not_empty()
-        dev_match = self.__dev_regex.search(ip_route_result.stdout)
+        ip_route_result = self._node.tools[Ip].get_route(force_run=True, sudo=True)
+        assert_that(ip_route_result).is_not_empty()
+        dev_match = self.__dev_regex.search(ip_route_result)
         if not dev_match or not dev_match.groups():
             raise LisaException(
                 "Could not locate default network interface"
-                f" in output:\n{ip_route_result.stdout}"
+                f" in output:\n{ip_route_result}"
             )
         assert_that(dev_match.groups()).is_length(1)
         default_interface_name = dev_match.group(1)
