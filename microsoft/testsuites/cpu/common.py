@@ -127,31 +127,21 @@ def set_idle_cpu_offline_online(log: Logger, node: Node, idle_cpu: List[str]) ->
 
 def verify_cpu_hot_plug(log: Logger, node: Node, run_times: int = 1) -> None:
     check_runnable(node)
-    file_path_list: Dict[str, str] = {}
-    restore_state = False
-    try:
-        for iteration in range(1, run_times + 1):
-            log.debug(f"start the {iteration} time(s) testing.")
-            restore_state = False
-            # set vmbus channels target cpu into 0 if kernel supports this feature.
-            file_path_list = set_interrupts_assigned_cpu(log, node)
-            # when kernel doesn't support above feature, we have to rely on current vm's
-            # cpu usage. then collect the cpu not in used exclude cpu0.
-            idle_cpu = get_idle_cpus(node)
-            if 0 == len(idle_cpu):
-                raise SkippedException(
-                    "all of the cpu are associated vmbus channels,"
-                    " no idle cpu can be used to test hotplug."
-                )
-            # start to take idle cpu from online to offline, then offline to online.
-            set_idle_cpu_offline_online(log, node, idle_cpu)
-            # when kernel doesn't support set vmbus channels target cpu feature, the
-            # dict which stores original status is empty, nothing need to be restored.
-            restore_interrupts_assignment(file_path_list, node)
-            restore_state = True
-    finally:
-        if not restore_state:
-            restore_interrupts_assignment(file_path_list, node)
+
+    for iteration in range(1, run_times + 1):
+        log.debug(f"start the {iteration} time(s) testing.")
+        # set vmbus channels target cpu into 0 if kernel supports this feature.
+        set_interrupts_assigned_cpu(log, node)
+        # when kernel doesn't support above feature, we have to rely on current vm's
+        # cpu usage. then collect the cpu not in used exclude cpu0.
+        idle_cpu = get_idle_cpus(node)
+        if 0 == len(idle_cpu):
+            raise SkippedException(
+                "all of the cpu are associated vmbus channels,"
+                " no idle cpu can be used to test hotplug."
+            )
+        # start to take idle cpu from online to offline, then offline to online.
+        set_idle_cpu_offline_online(log, node, idle_cpu)
 
 
 def get_cpu_state_file(cpu_id: str) -> str:
