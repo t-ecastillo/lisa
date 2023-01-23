@@ -20,7 +20,17 @@ from lisa import (
 )
 from lisa.environment import Environment
 from lisa.node import RemoteNode
-from lisa.tools import Ethtool, Fio, Iperf3, Kill, Lscpu, Lsvmbus, Modprobe
+from lisa.tools import (
+    Ethtool,
+    Fio,
+    Iperf3,
+    KernelConfig,
+    Kill,
+    Lscpu,
+    Lsvmbus,
+    Modprobe,
+    Reboot,
+)
 from lisa.util import SkippedException
 from microsoft.testsuites.cpu.common import (
     CPUState,
@@ -241,8 +251,12 @@ class CPUSuite(TestSuite):
             set_cpu_state_serial(log, node, idle_cpus, CPUState.ONLINE)
 
             # reset max and current channel count into original ones
-            # by reloading hv_netvsc driver
-            node.tools[Modprobe].reload(["hv_netvsc"])
+            if node.tools[KernelConfig].is_built_in("CONFIG_HYPERV_NET"):
+                # hv_netvsc is built-in, reboot VM
+                node.tools[Reboot].reboot()
+            else:
+                # reloading hv_netvsc driver
+                node.tools[Modprobe].reload(["hv_netvsc"])
 
             # change the combined channels count after all cpus online
             second_channel_count = random.randint(1, min(cpu_count, 64))
