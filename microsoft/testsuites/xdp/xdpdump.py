@@ -101,9 +101,12 @@ class XdpDump(Tool):
     def start_async(self, nic_name: str = "", timeout: int = 5) -> Process:
         try:
             self._disable_lro(nic_name)
-            command = ""
+            # fix below error on AlmaLinux by setting ulimit -l unlimited
+            # libbpf: failed to create map (name: 'perf_map'): Operation not permitted
+            # libbpf: failed to load object 'xdpdump_kern.o'
+            command = "ulimit -l unlimited && "
             if timeout > 0:
-                command = f"timeout {timeout}"
+                command += f"timeout {timeout}"
             command = f"{command} {self.command} -i {nic_name}"
             xdpdump_process = self.node.execute_async(
                 command,
