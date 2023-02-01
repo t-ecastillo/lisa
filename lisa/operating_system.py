@@ -1286,7 +1286,7 @@ class Fedora(RPMDistro):
 
     @classmethod
     def name_pattern(cls) -> Pattern[str]:
-        return re.compile("^Fedora|fedora$")
+        return re.compile("^Fedora|fedora|EuroLinux$")
 
     def get_kernel_information(self, force_run: bool = False) -> KernelInformation:
         kernel_information = super().get_kernel_information(force_run)
