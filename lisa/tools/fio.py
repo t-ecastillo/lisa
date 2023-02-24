@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
 from lisa.executable import Tool
 from lisa.messages import DiskPerformanceMessage, create_perf_message
-from lisa.operating_system import CBLMariner, Debian, Posix, Redhat, Suse
+from lisa.operating_system import CBLMariner, Debian, Oracle, Posix, Redhat, Suse
 from lisa.util import LisaException, constants
 from lisa.util.process import Process
 
@@ -66,6 +66,8 @@ class Fio(Tool):
         except Exception as e:
             self._log.debug(f"failed to install fio from package: {e}")
             self._install_from_src()
+        if isinstance(posix_os, Oracle):
+            posix_os.install_packages("fio-engine-libaio")
         return self._check_exists()
 
     def launch(
@@ -277,6 +279,7 @@ class Fio(Tool):
                 "gcc-c++",
                 "kernel-devel",
                 "libpmem-devel",
+                "fio-engine-libaio",
             ]
         elif isinstance(self.node.os, Debian):
             package_list = [
