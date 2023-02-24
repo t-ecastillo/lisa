@@ -364,8 +364,9 @@ class KVMPerformance(TestSuite):  # noqa
                 test_case_name=inspect.stack()[1][3],
             )
         finally:
-            self._linux_cleanup_nat(server_l1, self._BR_NAME, log)
-            self._linux_cleanup_nat(client_l1, self._BR_NAME, log)
+            pass
+            # self._linux_cleanup_nat(server_l1, self._BR_NAME, log)
+            # self._linux_cleanup_nat(client_l1, self._BR_NAME, log)
 
     @TestCaseMetadata(
         description="""
