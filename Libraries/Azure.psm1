@@ -528,7 +528,7 @@ Function Invoke-AllResourceGroupDeployments($SetupTypeData, $CurrentTestData, $R
 			$terms = Get-AzMarketplaceTerms -Publisher $publisher -Product $offer -Name $sku -ErrorAction SilentlyContinue
 			if ($terms -and !$terms.Accepted) {
 				Write-LogInfo "Accept terms for Publisher $publisher, Product $offer, Name $sku"
-				$terms | Set-AzMarketplaceTerms -Accept | Out-Null
+				Set-AzMarketplaceTerms -Accept -Publisher $publisher -Product $offer -Name $sku | Out-Null
 			}
 		}
 
