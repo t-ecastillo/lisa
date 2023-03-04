@@ -147,13 +147,17 @@ class Pktgen(Tool):
         parts = kernel_information.version_parts[:]
 
         # Full example:
-        # https://koji.mbox.centos.org/pkgs/packages/kernel-plus/4.18.0/
-        #   240.1.1.el8_3.centos.plus/x86_64/kernel-plus-modules-internal-
-        #   4.18.0-240.1.1.el8_3.centos.plus.x86_64.rpm",
+        # https://partnerpipelineshare.blob.core.windows.net/pkgs/packages/
+        #   kernel-plus/4.18.0/240.1.1.el8_3.centos.plus/x86_64/
+        #   kernel-plus-modules-internal-4.18.0-240.1.1.el8_3.centos.plus.x86_64.rpm
+        # https://partnerpipelineshare.blob.core.windows.net/pkgs/packages/
+        #   kernel-plus/5.14.0/162.6.1.el9_1.centos.plus/x86_64/
+        #   kernel-plus-modules-internal-5.14.0-162.6.1.el9_1.centos.plus.x86_64.rpm
         rpm_location = (
-            f"https://koji.mbox.centos.org/pkgs/packages/kernel-plus/4.18.0/"
-            f"{'.'.join(parts[3:-1])}.centos.plus/{parts[-1]}/kernel-plus-modules-"
-            f"internal-4.18.0-{'.'.join(parts[3:-1])}.centos.plus.{parts[-1]}.rpm"
+            "https://partnerpipelineshare.blob.core.windows.net/pkgs/packages/"
+            f"kernel-plus/{'.'.join(parts[0:3])}/{'.'.join(parts[3:-1])}.centos.plus"
+            f"/{parts[-1]}/kernel-plus-modules-internal-{'.'.join(parts[0:3])}-"
+            f"{'.'.join(parts[3:-1])}.centos.plus.{parts[-1]}.rpm"
         )
         # Install pkggen from CentOS for redhat, because there is no free
         # download for Redhat.
