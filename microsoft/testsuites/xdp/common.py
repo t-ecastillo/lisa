@@ -22,7 +22,7 @@ _tx_forwarded_patterns = [
     # rx_xdp_tx_xmit
     re.compile(r"^rx_xdp_tx_xmit$"),
 ]
-_huge_page_disks = {"/mnt/huge": "", "/mnt/huge1g": "pagesize=1G"}
+_huge_page_disks = {"/mnt/huge": "", "/mnt/huge1g": "pagesize=512MB"}
 
 
 def get_xdpdump(node: Node) -> XdpDump:
