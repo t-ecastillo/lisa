@@ -6,8 +6,8 @@ from typing import Any, List, Type, cast
 
 from lisa.base_tools import Wget
 from lisa.executable import Tool
-from lisa.operating_system import Fedora, Posix
-from lisa.tools import KernelConfig, Modprobe
+from lisa.operating_system import Fedora, Oracle, Posix
+from lisa.tools import KernelConfig, Modprobe, Uname
 from lisa.util import UnsupportedKernelException, find_patterns_groups_in_lines
 
 
@@ -85,10 +85,18 @@ class Pktgen(Tool):
         returns the packets count supposes to be sent.
         """
         if isinstance(self.node.os, Fedora):
-            module_full_path = self._tool_path / self._module_name
+            if isinstance(self.node.os, Oracle):
+                kernel_ver = (
+                    self.node.tools[Uname].get_linux_information().kernel_version
+                )
+                module_full_path = (
+                    f"/usr/lib/modules/{kernel_ver}/kernel/net/core/pktgen.ko.xz"
+                )
+            else:
+                module_full_path = str(self._tool_path / self._module_name)
             modprobe = self.node.tools[Modprobe]
-            modprobe.remove([str(module_full_path)], ignore_error=True)
-            modprobe.load_by_file(str(module_full_path))
+            modprobe.remove([module_full_path], ignore_error=True)
+            modprobe.load_by_file(module_full_path)
 
         if thread_count == 1:
             command = self._single_thread_entry
@@ -119,7 +127,7 @@ class Pktgen(Tool):
 
     def _install(self) -> bool:
         wget = self.node.tools[Wget]
-        if isinstance(self.node.os, Fedora):
+        if isinstance(self.node.os, Fedora) and not isinstance(self.node.os, Oracle):
             self._install_fedora()
         else:
             if not self.node.tools[KernelConfig].is_enabled("CONFIG_NET_PKTGEN"):
