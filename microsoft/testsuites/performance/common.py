@@ -299,6 +299,7 @@ def perf_ntttcp(
                 buffer_size = int(1024 / 1024)
             server_result = server_ntttcp.run_as_server_async(
                 server_nic_name,
+                run_time_seconds=30,
                 ports_count=num_threads_p,
                 buffer_size=buffer_size,
                 dev_differentiator=dev_differentiator,
@@ -319,6 +320,7 @@ def perf_ntttcp(
                 client_nic_name,
                 server.internal_address,
                 buffer_size=buffer_size,
+                run_time_seconds=30,
                 threads_count=num_threads_n,
                 ports_count=num_threads_p,
                 dev_differentiator=dev_differentiator,
