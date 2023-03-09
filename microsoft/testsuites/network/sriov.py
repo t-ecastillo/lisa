@@ -359,7 +359,7 @@ class Sriov(TestSuite):
         vm_nics = initialize_nic_info(environment)
         sriov_basic_test(environment, vm_nics)
         for node in environment.nodes.list():
-            node.reboot()
+            node.reboot(time_out=600)
         sriov_basic_test(environment, vm_nics)
 
     @TestCaseMetadata(
