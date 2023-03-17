@@ -1605,8 +1605,8 @@ class SecurityProfile(AzureFeatureMixin, features.SecurityProfile):
         {
             "securityProfile": {
                 "uefiSettings": {
-                    "secureBootEnabled": "true",
-                    "vTpmEnabled": "true"
+                    "secureBootEnabled": "false",
+                    "vTpmEnabled": "false"
                 },
                 "securityType": "%s"
             }
@@ -1702,12 +1702,10 @@ class SecurityProfile(AzureFeatureMixin, features.SecurityProfile):
             template["functions"][0]["members"]["getOSImage"]["output"]["value"][
                 "managedDisk"
             ] = (
-                "[if(not(equals(parameters('node')['disk_type'], 'Ephemeral')), "
-                'json(concat(\'{"storageAccountType": "\','
-                "parameters('node')['disk_type'],"
-                '\'","securityProfile":{"securityEncryptionType": "'
-                f'{security_encryption_type}"'
-                f"{disk_encryption_set}"
+                "[if(not(equals(parameters('node')['disk_type'], "
+                "'Ephemeral')), json(concat('{\"storageAccountType\": \"',parameters"
+                "('node')['disk_type'],'\",\"securityProfile\":{"
+                f'"securityEncryptionType": "NonPersistedVMGuestState"'
                 "}}')), json('null'))]"
             )
         else:
