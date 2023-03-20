@@ -282,7 +282,7 @@ class KdumpCrash(TestSuite):
         )
 
         # Reboot system to make kdump take effect
-        node.reboot()
+        node.reboot(time_out=1200)
 
         # Confirm that the kernel dump mechanism is enabled
         kdump.check_crashkernel_loaded(self.crash_kernel)
