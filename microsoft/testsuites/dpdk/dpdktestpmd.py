@@ -610,6 +610,7 @@ class DpdkTestpmd(Tool):
             f"meson {sample_apps} build",
             shell=True,
             cwd=self.dpdk_path,
+            sudo=True,
             expected_exit_code=0,
             expected_exit_code_failure_message=(
                 "meson build for dpdk failed, check that"
@@ -622,6 +623,7 @@ class DpdkTestpmd(Tool):
             "ninja",
             cwd=self.dpdk_build_path,
             timeout=1800,
+            sudo=True,
             expected_exit_code=0,
             expected_exit_code_failure_message=(
                 "ninja build for dpdk failed. check build spew for missing headers "
