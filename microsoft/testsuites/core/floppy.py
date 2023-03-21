@@ -3,8 +3,15 @@
 
 from assertpy import assert_that
 
-from lisa import RemoteNode, TestCaseMetadata, TestSuite, TestSuiteMetadata
+from lisa import (
+    RemoteNode,
+    TestCaseMetadata,
+    TestSuite,
+    TestSuiteMetadata,
+    SkippedException,
+)
 from lisa.tools import Modprobe
+from lisa.operating_system import CentOs
 
 
 @TestSuiteMetadata(
@@ -30,6 +37,14 @@ class Floppy(TestSuite):
         priority=1,
     )
     def check_floppy_module(self, node: RemoteNode) -> None:
+        if (
+            isinstance(node.os, CentOs)
+            and node.os.information.version.major < 7
+            and node.os.information.version.major <= 7
+        ):
+            raise SkippedException(
+                "CentOS <= 7.7 are not receiving fixes for this issue."
+            )
         modprobe = node.tools[Modprobe]
 
         assert_that(modprobe.is_module_loaded("floppy")).described_as(
