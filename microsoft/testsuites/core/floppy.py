@@ -37,13 +37,11 @@ class Floppy(TestSuite):
         priority=1,
     )
     def check_floppy_module(self, node: RemoteNode) -> None:
-        if (
-            isinstance(node.os, CentOs)
-            and node.os.information.version.major < 7
-            and node.os.information.version.major < 7
-        ):
+        os_version = node.os.information.version
+        is_centos = isinstance(node.os, CentOs)
+        if is_centos and os_version < "7.7.0":
             raise SkippedException(
-                "CentOS < 7.7 are EOL and not receiving fixes for this issue."
+                "CentOS < 7.7 are not receiving fixes for this issue."
             )
         modprobe = node.tools[Modprobe]
 
