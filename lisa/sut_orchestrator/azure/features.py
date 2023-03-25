@@ -278,7 +278,7 @@ class SerialConsole(AzureFeatureMixin, features.SerialConsole):
             self._get_connection()
             raise e
 
-    @retry(tries=3, delay=5)
+    @retry(tries=20, delay=5)
     def read(self) -> str:
         # websocket connection is not stable, so we need to retry
         try:

@@ -35,11 +35,11 @@ class SerialConsoleSuite(TestSuite):
     def verify_serial_console(self, log: Logger, node: Node) -> None:
         command = "echo back"
         serial_console = node.features[SerialConsole]
+        _ = serial_console.read()
+        serial_console.write(command)
 
         # retry to read serial console output, because it may not be ready
         for _ in range(180):
-            _ = serial_console.read()
-            serial_console.write(command)
             output = serial_console.read()
 
             # check if the output contains the command
