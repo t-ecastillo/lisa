@@ -3027,7 +3027,7 @@ function install_net_tools () {
 # Get the active NIC name
 function get_active_nic_name () {
 	install_net_tools
-	echo $(route | grep '^default' | grep -o '[^ ]*$')
+	echo $(route | grep '^default' | grep -m 1 -o '[^ ]*$')
 }
 
 # Create partitions
