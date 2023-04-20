@@ -367,7 +367,7 @@ def perf_ntttcp(
         error_msg = ""
         throw_error = False
         for node in [client, server]:
-            if not node.is_connected:
+            if node.is_connected:
                 error_msg += f" VM {node.name} can't be connected, "
                 throw_error = True
         if throw_error:
