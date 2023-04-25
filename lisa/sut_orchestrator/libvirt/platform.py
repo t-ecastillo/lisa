@@ -581,6 +581,11 @@ class BaseLibvirtPlatform(Platform, IBaseLibvirtPlatform):
 
         # Create libvirt domain (i.e. VM).
         xml = self._create_node_domain_xml(environment, log, node)
+
+        xml_path = self.host_node.local_log_path / f"{node_context.vm_name}.xml"
+        with open(str(xml_path), "w") as f:
+            f.write(xml)
+
         node_context.domain = self.libvirt_conn.defineXML(xml)
 
         self._create_domain_and_attach_logger(
