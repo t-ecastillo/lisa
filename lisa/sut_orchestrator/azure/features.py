@@ -440,7 +440,7 @@ class Gpu(AzureFeatureMixin, features.Gpu):
         r"Standard_NV[\d]+ad(ms|s)_A10_v5)",
         re.I,
     )
-    _amd_supported_skus = re.compile(r"^Standard_[^_]+_v4$", re.I)
+    _amd_supported_skus = re.compile(r"^Standard_NV[\d]+as_v4$", re.I)
     _gpu_extension_template = """
         {
         "name": "[concat(parameters('nodes')[copyIndex('vmCopy')]['name'], '/gpu-extension')]",
