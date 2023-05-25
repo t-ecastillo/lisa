@@ -58,13 +58,9 @@ class Pip(Tool):
         envs = {}
         if install_path != "":
             tagert_path = install_path + "/python_packages"
-            node.tools[Mkdir].create_directory(tagert_path, sudo=True)
+            node.tools[Mkdir].create_directory(tagert_path)
             cache_path = install_path + "/tmp"
-            node.tools[Mkdir].create_directory(cache_path, sudo=True)
-            # In some Ubuntu, find_partition_with_freespace() return root "/"
-            # for "install_path", we can't run chmod on "/", need to chmod 1 by 1
-            node.tools[Chmod].update_folder(tagert_path, "777", sudo=True)
-            node.tools[Chmod].update_folder(cache_path, "777", sudo=True)
+            node.tools[Mkdir].create_directory(cache_path)
 
             cmd_line += f" -t {tagert_path} --cache-dir={cache_path} -b {cache_path}"
             # Since Python 3.9, pip 21.2, -b for build path has been deprecated
@@ -76,7 +72,7 @@ class Pip(Tool):
         if 0 != cmd_result.exit_code and get_matched_str(
             cmd_result.stdout, self._no_permission_pattern
         ):
-            cmd_result = self.run(cmd_line, update_envs=envs, sudo=True)
+            cmd_result = self.run(cmd_line, update_envs=envs)
 
         assert_that(
             cmd_result.exit_code, f"fail to install {packages_name}"
