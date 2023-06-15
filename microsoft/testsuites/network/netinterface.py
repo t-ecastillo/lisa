@@ -20,7 +20,7 @@ from lisa import (
 from lisa.features import NetworkInterface, SerialConsole, Synthetic
 from lisa.nic import Nics
 from lisa.operating_system import FreeBSD
-from lisa.tools import Dhclient, Ip, KernelConfig, Uname, Wget
+from lisa.tools import Ip, KernelConfig, Uname, Wget
 from lisa.util import perf_timer
 
 from .common import restore_extra_nics_per_node
@@ -51,27 +51,48 @@ class NetInterface(TestSuite):
         priority=1,
         requirement=simple_requirement(network_interface=Synthetic()),
     )
-    def validate_netvsc_reload(self, node: Node, log_path: Path) -> None:
+    def verify_netvsc_reload(self, node: Node, log_path: Path) -> None:
         self._validate_netvsc_built_in(node)
         network_interface_feature = node.features[NetworkInterface]
         # Test loading and unloading netvsc driver
         test_count = 0
-        while test_count < self.NETVSC_RELOAD_TEST_COUNT - 1:
+        while test_count < self.NETVSC_RELOAD_TEST_COUNT:
             test_count += 1
             # Unload and load hv_netvsc
             try:
                 network_interface_feature.reload_module()
             except Exception as identifier:
-                # Sometimes the ssh session is inactive. If no panic is detected,
-                # close the node to retry again
-                node.log.debug(f"This exception '{identifier}' is ignorable. Try again")
+                # It has two kinds of known exceptions. One is SSHException "SSH session
+                # not active". Another is "cannot connect to TCP port". The SSHException
+                # can be ignorable. If no panic is detected, close the node and retry.
+                # If it is the second exception, retrying is useless, so just raise an
+                # exception. Having the second exception is not clear if the image has
+                # an issue. The test result can be set as "Attempted". For now, we just
+                # found an image gigamon-inc gigamon-fm-5_16_00 vseries-1-node 1.7.3
+                # truly fails the case because of the second exception. It has a veth0
+                # created by openvswitch, which doesn't seem to be able to properly
+                # handle the removal/addition of the netvsc interface eth0. Restart
+                # openvswitch-switch service can recover the network.
                 serial_console = node.features[SerialConsole]
                 serial_console.check_panic(
                     saved_path=log_path, stage="after_reload_netvsc", force_run=True
                 )
-                node.close()
-        # Run the last time
-        network_interface_feature.reload_module()
+                if str(identifier) == "SSH session not active":
+                    node.log.debug(
+                        f"This exception '{identifier}' is ignorable. Try again"
+                    )
+                    node.close()
+                elif "cannot connect to TCP port" in str(identifier):
+                    raise LisaException(
+                        f"After reloading netvsc module {test_count - 1} times, "
+                        f"encounter exception '{identifier}'. It is not clear if"
+                        " the image has an issue. Please rerun this case."
+                    )
+                else:
+                    raise LisaException(
+                        f"After reloading netvsc module {test_count - 1} times, "
+                        f"encounter exception '{identifier}'."
+                    )
 
     @TestCaseMetadata(
         description="""
@@ -93,7 +114,7 @@ class NetInterface(TestSuite):
             ),
         ),
     )
-    def validate_network_interface_reload_via_ip_link(
+    def verify_network_interface_reload_via_ip_link(
         self, node: Node, log: Logger
     ) -> None:
         self._validate_netvsc_built_in(node)
@@ -114,14 +135,9 @@ class NetInterface(TestSuite):
         ip = node.tools[Ip]
         while test_count < self.NET_INTERFACE_RELOAD_TEST_COUNT:
             test_count += 1
-            ip.restart_device(default_nic, run_dhclient=True)
-            if not node_nic_info.default_nic:
-                # Add default route if missing after running ip link down/up
-                node.execute(f"ip route add {default_route}", shell=True, sudo=True)
-            if not node_nic_info.nics[default_nic].ip_addr:
-                node.execute("kill $(pidof dhclient)", shell=True, sudo=True)
-                dhclient = node.tools[Dhclient]
-                dhclient.renew()
+            ip.restart_device(
+                default_nic, run_dhclient=True, default_route=default_route
+            )
 
             timer = perf_timer.Timer()
             while timer.elapsed(stop=False) < self.DHCLIENT_TIMEOUT:
@@ -155,7 +171,7 @@ class NetInterface(TestSuite):
             ),
         ),
     )
-    def validate_set_static_mac(self, node: Node, log: Logger) -> None:
+    def verify_set_static_mac(self, node: Node, log: Logger) -> None:
         ip = node.tools[Ip]
         node_nic_info = Nics(node)
         node_nic_info.initialize()

@@ -12,12 +12,13 @@ from lisa.executable import Tools
 from lisa.feature import Features
 from lisa.nic import Nics
 from lisa.operating_system import OperatingSystem
-from lisa.tools import Echo, Lsblk, Mkfs, Mount, Reboot, Uname
+from lisa.tools import Chmod, Df, Echo, Lsblk, Mkfs, Mount, Reboot, Uname
 from lisa.tools.mkfs import FileSystem
 from lisa.util import (
     ContextMixin,
     InitializableMixin,
     LisaException,
+    RequireUserPasswordException,
     constants,
     fields_to_dict,
     get_datetime_path,
@@ -78,6 +79,8 @@ class Node(subclasses.BaseClassWithRunbookMixin, ContextMixin, InitializableMixi
         self._local_working_path: Optional[Path] = None
         self._support_sudo: Optional[bool] = None
         self._is_dirty: bool = False
+        self.capture_boot_time: bool = False
+        self.capture_azure_information: bool = False
 
     @property
     def shell(self) -> Shell:
@@ -103,6 +106,7 @@ class Node(subclasses.BaseClassWithRunbookMixin, ContextMixin, InitializableMixi
             result = process.wait_result(10)
             if result.exit_code == 0:
                 self._support_sudo = True
+                self.check_sudo_password_required()
             else:
                 self._support_sudo = False
                 self.log.debug("node doesn't support sudo, may cause failure later.")
@@ -111,6 +115,49 @@ class Node(subclasses.BaseClassWithRunbookMixin, ContextMixin, InitializableMixi
             self._support_sudo = True
 
         return self._support_sudo
+
+    def check_sudo_password_required(self) -> None:
+        # check if password is required when running command with sudo
+        if self.is_remote and self.is_posix:
+            process = self._execute(
+                "echo LISA_TEST_FOR_PASSWORD", shell=True, sudo=True, no_info_log=True
+            )
+            result = process.wait_result(10)
+            if result.exit_code != 0 and "[sudo] password for" in result.stdout:
+                self.log.debug(
+                    "Running commands with sudo in this node needs input of password."
+                )
+                ssh_shell = cast(SshShell, self.shell)
+                ssh_shell.is_sudo_required_password = True
+                if not ssh_shell.connection_info.password:
+                    raise RequireUserPasswordException(
+                        "Running commands with sudo requires user's password,"
+                        " but no password is provided."
+                    )
+                # ssh_shell.is_sudo_required_password is true, so running sudo command
+                # will input password in process.wait_result. Check running sudo again
+                # and get password prompts. For most images, after inputting a password
+                # successfully, the prompt is changed when running sudo command again.
+                # So check twice to get two kinds of prompt
+                password_prompts = []
+                for i in range(1, 3):
+                    process = self._execute(
+                        "echo LISA_TEST_FOR_PASSWORD",
+                        shell=True,
+                        sudo=True,
+                        no_info_log=True,
+                    )
+                    result = process.wait_result(10)
+                    if result.exit_code != 0:
+                        raise RequireUserPasswordException(
+                            "The password might be invalid for running sudo command"
+                        )
+                    password_prompt = result.stdout.replace(
+                        "LISA_TEST_FOR_PASSWORD", ""
+                    )
+                    password_prompts.append(password_prompt)
+                    self.log.debug(f"password prompt {i}: {password_prompt}")
+                ssh_shell.password_prompts = password_prompts
 
     @property
     def is_connected(self) -> bool:
@@ -351,6 +398,15 @@ class Node(subclasses.BaseClassWithRunbookMixin, ContextMixin, InitializableMixi
             f"No partition with Required disk space of {size_in_gb}GB found"
         )
 
+    def get_working_path_with_required_space(self, required_size_in_gb: int) -> str:
+        work_path = str(self.working_path)
+        df = self.tools[Df]
+        lisa_path_space = df.get_filesystem_available_space(work_path)
+        if lisa_path_space < required_size_in_gb:
+            work_path = self.find_partition_with_freespace(required_size_in_gb)
+            self.tools[Chmod].chmod(work_path, "777", sudo=True)
+        return work_path
+
     def get_working_path(self) -> PurePath:
         """
         It returns the path with expanded environment variables, but not create
@@ -482,6 +538,7 @@ class RemoteNode(Node):
         fields = [
             constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS,
             constants.ENVIRONMENTS_NODES_REMOTE_PORT,
+            constants.ENVIRONMENTS_NODES_REMOTE_USE_PUBLIC_ADDRESS,
             constants.ENVIRONMENTS_NODES_REMOTE_PUBLIC_ADDRESS,
             constants.ENVIRONMENTS_NODES_REMOTE_PUBLIC_PORT,
         ]
@@ -507,6 +564,7 @@ class RemoteNode(Node):
         self,
         address: str = "",
         port: Optional[int] = 22,
+        use_public_address: bool = True,
         public_address: str = "",
         public_port: Optional[int] = 22,
         username: str = "root",
@@ -533,8 +591,8 @@ class RemoteNode(Node):
         assert port
 
         self._connection_info: schema.ConnectionInfo = schema.ConnectionInfo(
-            public_address,
-            public_port,
+            public_address if use_public_address else address,
+            public_port if use_public_address else port,
             username,
             password,
             private_key_file,

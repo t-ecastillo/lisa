@@ -38,6 +38,7 @@ from lisa.executable import Tool
 from lisa.util import (
     BaseClassMixin,
     LisaException,
+    LisaTimeoutException,
     MissingPackagesException,
     ReleaseEndOfLifeException,
     RepoNotExistException,
@@ -385,7 +386,7 @@ class Posix(OperatingSystem, BaseClassMixin):
         ).save_stdout_to_file(saved_path / "modinfo-hv_netvsc.txt")
 
         if self._node.is_test_target:
-            if self._node._first_initialize:
+            if self._node.capture_boot_time and self._node._first_initialize:
                 from lisa.tools import SystemdAnalyze
 
                 try:
@@ -396,21 +397,24 @@ class Posix(OperatingSystem, BaseClassMixin):
                 except Exception as identifier:
                     self._node.log.debug(f"error on get boot time: {identifier}")
 
-            from lisa.tools import Chmod, Find
+            file_list = []
+            if self._node.capture_azure_information:
+                from lisa.tools import Chmod, Find
 
-            find_tool = self._node.tools[Find]
-            file_list = find_tool.find_files(
-                self._node.get_pure_path("/var/log/azure/"),
-                file_type="f",
-                sudo=True,
-                ignore_not_exist=True,
-            )
-            if len(file_list) > 0:
-                self._node.tools[Chmod].update_folder(
-                    "/var/log/azure/", "a+rwX", sudo=True
+                find_tool = self._node.tools[Find]
+                file_list = find_tool.find_files(
+                    self._node.get_pure_path("/var/log/azure/"),
+                    file_type="f",
+                    sudo=True,
+                    ignore_not_exist=True,
                 )
+                if len(file_list) > 0:
+                    self._node.tools[Chmod].update_folder(
+                        "/var/log/azure/", "a+rwX", sudo=True
+                    )
+                file_list.append("/var/log/waagent.log")
+
             file_list.append("/etc/os-release")
-            file_list.append("/var/log/waagent.log")
             for file in file_list:
                 try:
                     file_name = file.split("/")[-1]
@@ -420,6 +424,13 @@ class Posix(OperatingSystem, BaseClassMixin):
                     )
                 except FileNotFoundError:
                     self._log.debug(f"File {file} doesn't exist.")
+                except Exception as identifier:
+                    # Some images have no /etc/os-release. e.g. osirium-ltd osirium_pem
+                    # image. It will have an exception (not FileNotFoundError).
+                    self._log.debug(
+                        f"Fail to copy back file {file}: {identifier}. "
+                        "Please check if the file exists"
+                    )
 
     def get_package_information(
         self, package_name: str, use_cached: bool = True
@@ -590,7 +601,9 @@ class Posix(OperatingSystem, BaseClassMixin):
             time.sleep(1)
 
         if timeout < timer.elapsed():
-            raise Exception(f"timeout to wait previous {process_name} process stop.")
+            raise LisaTimeoutException(
+                f"timeout to wait previous {process_name} process stop."
+            )
 
     def __resolve_package_name(self, package: Union[str, Tool, Type[Tool]]) -> str:
         """
@@ -634,7 +647,7 @@ class CoreOs(Linux):
 class Alpine(Linux):
     @classmethod
     def name_pattern(cls) -> Pattern[str]:
-        return re.compile("^Alpine")
+        return re.compile("^Alpine|alpine|alpaquita")
 
 
 @dataclass
@@ -770,7 +783,7 @@ class Debian(Linux):
             time.sleep(1)
 
         if timeout < timer.elapsed():
-            raise Exception("timeout to wait previous dpkg process stop.")
+            raise LisaTimeoutException("timeout to wait previous dpkg process stop.")
 
     def get_repositories(self) -> List[RepositoryInfo]:
         self._initialize_package_installation()
@@ -1426,6 +1439,24 @@ class Redhat(Fedora):
         #  repo to resolve the issue.
         # Details please refer https://docs.microsoft.com/en-us/azure/virtual-machines/workloads/redhat/redhat-rhui#azure-rhui-infrastructure # noqa: E501
         if "Red Hat" == information.vendor:
+            # there are some images contain multiple rhui packages, like below:
+            # rhui-azure-rhel8-2.2-198.noarch
+            # rhui-azure-rhel8-eus-2.2-198.noarch
+            # we need to remove the non-eus version, otherwise, yum update will fail
+            # for below reason:
+            #   Error: Transaction test error:
+            #   file /etc/cron.daily/rhui-update-client conflicts between attempted
+            #   installs of rhui-azure-rhel8-eus-2.2-485.noarch and
+            #   rhui-azure-rhel8-2.2-485.noarch
+            rhui_pacakges = self._node.execute(
+                "rpm -qa | grep -i rhui-azure",
+                shell=True,
+                sudo=True,
+            ).stdout
+            if "eus" in rhui_pacakges and len(rhui_pacakges.splitlines()) > 1:
+                for rhui_package in rhui_pacakges.splitlines():
+                    if "eus" not in rhui_package:
+                        self._node.execute(f"yum remove -y {rhui_package}", sudo=True)
             self._node.execute(
                 "yum update -y --disablerepo='*' --enablerepo='*microsoft*' ",
                 sudo=True,

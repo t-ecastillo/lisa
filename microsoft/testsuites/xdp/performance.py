@@ -362,15 +362,15 @@ class XdpPerformance(TestSuite):
 
         # install pktgen on sender, and xdpdump on receiver.
         try:
-            tools: List[Any] = run_in_parallel(
-                [partial(sender.tools.get, Pktgen), partial(get_xdpdump, receiver)]
-            )
+            tools: List[Any] = []
+            tools.append(get_xdpdump(receiver))
+            tools.append(sender.tools[Pktgen])
         except UnsupportedKernelException as identifier:
             raise SkippedException(identifier)
 
         # type annotations
-        pktgen: Pktgen = tools[0]
-        xdpdump: XdpDump = tools[1]
+        xdpdump: XdpDump = tools[0]
+        pktgen: Pktgen = tools[1]
 
         sender_nic = sender.nics.get_nic_by_index(1)
         receiver_nic = receiver.nics.get_nic_by_index(1)
@@ -429,11 +429,6 @@ class XdpPerformance(TestSuite):
         forwarder = environment.nodes[1]
         receiver = environment.nodes[2]
 
-        # install pktgen on sender
-        try:
-            pktgen = sender.tools[Pktgen]
-        except UnsupportedKernelException as identifier:
-            raise SkippedException(identifier)
         # install xdp dump on forwarder and receiver
         forwarder_xdpdump, receiver_xdpdump = run_in_parallel(
             [
@@ -442,6 +437,12 @@ class XdpPerformance(TestSuite):
             ],
             log=log,
         )
+        # install pktgen on sender
+        try:
+            pktgen = sender.tools[Pktgen]
+        except UnsupportedKernelException as identifier:
+            raise SkippedException(identifier)
+
         sender_nic = sender.nics.get_nic_by_index(1)
         forwarder_nic = forwarder.nics.get_nic_by_index(1)
         receiver_nic = receiver.nics.get_nic_by_index(1)

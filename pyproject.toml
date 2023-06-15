@@ -30,7 +30,7 @@ dependencies = [
 dynamic = ["version"]
 license = {text = "MIT"}
 readme = "README.rst"
-requires-python = ">=3.8, <3.11"
+requires-python = ">=3.8"
 
 
 [project.optional-dependencies]
@@ -49,10 +49,11 @@ azure = [
     "azure-mgmt-storage ~= 20.0.0",
     "azure-storage-blob ~= 12.11.0",
     "azure-storage-file-share ~= 12.4.0",
+    "msrestazure ~= 0.6.4",
     "cachetools ~= 5.2.0",
     "requests",
-    "Pillow ~= 9.0.0",
-    "PyGObject ~= 3.38.0; platform_system == 'Linux'",
+    "Pillow ~= 9.5.0",
+    "PyGObject ~= 3.42.0; platform_system == 'Linux'",
 ]
 
 black = [
@@ -85,7 +86,7 @@ legacy = [
 ]
 
 libvirt = [
-    "libvirt-python ~= 8.9.0; platform_system != 'Windows'",
+    "libvirt-python ~= 9.3.0; platform_system != 'Windows'",
     "pycdlib ~= 1.12.0; platform_system != 'Windows'",
 ]
 
@@ -94,7 +95,7 @@ mypy = [
 ]
 
 pylint = [
-    "pylint ~= 2.15.10"
+    "pylint ~= 2.17.0"
 ]
 
 test = [

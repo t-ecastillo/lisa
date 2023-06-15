@@ -8,7 +8,17 @@ from retry import retry
 from lisa import Environment, Node, RemoteNode, constants
 from lisa.features import NetworkInterface
 from lisa.nic import NicInfo, Nics
-from lisa.tools import Cat, KernelConfig, Kill, Lsmod, Lspci, Modprobe, Ping, Ssh
+from lisa.tools import (
+    Cat,
+    Dhclient,
+    KernelConfig,
+    Kill,
+    Lsmod,
+    Lspci,
+    Modprobe,
+    Ping,
+    Ssh,
+)
 
 # ConnectX-3 uses mlx4_core
 # mlx4_en and mlx4_ib depends on mlx4_core
@@ -19,7 +29,7 @@ from lisa.tools import Cat, KernelConfig, Kill, Lsmod, Lspci, Modprobe, Ping, Ss
 reload_modules_dict: Dict[str, List[str]] = {
     "mlx5_core": ["mlx5_ib"],
     "mlx4_core": ["mlx4_en", "mlx4_ib"],
-    "mana": ["mana_en", "mana_ib"],
+    "mana": ["mana", "mana_en", "mana_ib"],
 }
 modules_config_dict: Dict[str, str] = {
     "mlx5_core": "CONFIG_MLX5_CORE",
@@ -43,6 +53,9 @@ def initialize_nic_info(
         node_nic_info = Nics(node)
         node_nic_info.initialize()
         for _, node_nic in node_nic_info.nics.items():
+            # for some old distro, need run dhclient to get ip address for extra nics
+            if not node_nic.ip_addr:
+                node.tools[Dhclient].renew(node_nic.upper)
             assert_that(node_nic.ip_addr).described_as(
                 f"This interface {node_nic.upper} does not have a IP address."
             ).is_not_empty()
@@ -223,7 +236,7 @@ def sriov_disable_enable(environment: Environment, times: int = 4) -> None:
         sriov_is_enabled = network_interface_feature.is_enabled_sriov()
         if sriov_is_enabled:
             sriov_basic_test(environment, vm_nics)
-        network_interface_feature.switch_sriov(enable=(not sriov_is_enabled))
+        network_interface_feature.switch_sriov(enable=not sriov_is_enabled)
 
 
 def remove_extra_nics_per_node(node: Node) -> None:

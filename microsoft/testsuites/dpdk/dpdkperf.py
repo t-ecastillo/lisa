@@ -11,7 +11,11 @@ from lisa import (
     simple_requirement,
 )
 from lisa.features import Gpu, Infiniband, IsolatedResource, Sriov
-from lisa.messages import NetworkPPSPerformanceMessage, create_perf_message
+from lisa.messages import (
+    NetworkPPSPerformanceMessage,
+    TransportProtocol,
+    create_perf_message,
+)
 from lisa.testsuite import TestResult
 from lisa.tools import Lscpu
 from lisa.util import constants
@@ -98,9 +102,7 @@ class DpdkPerformance(TestSuite):
         log: Logger,
         variables: Dict[str, Any],
     ) -> None:
-        self._run_dpdk_perf_test(
-            "failsafe", result, log, variables, use_max_nics=True, service_cores=4
-        )
+        self._run_dpdk_perf_test("failsafe", result, log, variables, service_cores=4)
 
     @TestCaseMetadata(
         description="""
@@ -145,9 +147,7 @@ class DpdkPerformance(TestSuite):
         log: Logger,
         variables: Dict[str, Any],
     ) -> None:
-        self._run_dpdk_perf_test(
-            "failsafe", result, log, variables, use_max_nics=True, use_queues=True
-        )
+        self._run_dpdk_perf_test("failsafe", result, log, variables, use_queues=True)
 
     @TestCaseMetadata(
         description="""
@@ -175,7 +175,6 @@ class DpdkPerformance(TestSuite):
             log,
             variables,
             service_cores=4,
-            use_max_nics=True,
             use_queues=True,
         )
 
@@ -245,9 +244,7 @@ class DpdkPerformance(TestSuite):
         log: Logger,
         variables: Dict[str, Any],
     ) -> None:
-        self._run_dpdk_perf_test(
-            "netvsc", result, log, variables, service_cores=4, use_max_nics=True
-        )
+        self._run_dpdk_perf_test("netvsc", result, log, variables, service_cores=4)
 
     @TestCaseMetadata(
         description="""
@@ -292,7 +289,11 @@ class DpdkPerformance(TestSuite):
         variables: Dict[str, Any],
     ) -> None:
         self._run_dpdk_perf_test(
-            "netvsc", result, log, variables, use_queues=True, use_max_nics=True
+            "netvsc",
+            result,
+            log,
+            variables,
+            use_queues=True,
         )
 
     @TestCaseMetadata(
@@ -321,7 +322,6 @@ class DpdkPerformance(TestSuite):
             log,
             variables,
             service_cores=4,
-            use_max_nics=True,
             use_queues=True,
         )
 
@@ -331,7 +331,6 @@ class DpdkPerformance(TestSuite):
         test_result: TestResult,
         log: Logger,
         variables: Dict[str, Any],
-        use_max_nics: bool = False,
         use_queues: bool = False,
         service_cores: int = 1,
     ) -> None:
@@ -347,7 +346,6 @@ class DpdkPerformance(TestSuite):
                     log,
                     variables,
                     pmd,
-                    use_max_nics=use_max_nics,
                     use_service_cores=service_cores,
                 )
             else:
@@ -356,7 +354,6 @@ class DpdkPerformance(TestSuite):
                     log,
                     variables,
                     pmd,
-                    use_max_nics=use_max_nics,
                     use_service_cores=service_cores,
                 )
         except UnsupportedPackageVersionException as err:
@@ -385,6 +382,7 @@ class DpdkPerformance(TestSuite):
         for result_fields in [sender_fields, receiver_fields]:
             result_fields["tool"] = constants.NETWORK_PERFORMANCE_TOOL_DPDK_TESTPMD
             result_fields["test_type"] = "performance"
+            result_fields["protocol_type"] = TransportProtocol.Udp
 
         # send side fields
         sender = send_kit.testpmd

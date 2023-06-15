@@ -5,13 +5,11 @@ from __future__ import annotations
 
 import copy
 import traceback
-import warnings
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from time import sleep
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
-from warnings import warn
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from func_timeout import FunctionTimedOut, func_timeout  # type: ignore
 from retry.api import retry_call
@@ -19,6 +17,7 @@ from retry.api import retry_call
 from lisa import notifier, schema, search_space
 from lisa.environment import Environment, EnvironmentSpace, EnvironmentStatus
 from lisa.feature import Feature
+from lisa.features import SerialConsole
 from lisa.messages import TestResultMessage, TestStatus, _is_completed_status
 from lisa.operating_system import OperatingSystem, Windows
 from lisa.util import (
@@ -172,16 +171,20 @@ class TestResult:
     def set_status(
         self, new_status: TestStatus, message: Union[str, List[str]]
     ) -> None:
+        send_result = False
         if message:
             if isinstance(message, str):
                 message = [message]
             if self.message:
                 message.insert(0, self.message)
             self.message = "\n".join(message)
+            send_result = True
         if self.status != new_status:
             self.status = new_status
             if new_status == TestStatus.RUNNING:
                 self._timer = create_timer()
+            send_result = True
+        if send_result:
             self._send_result_message(self.stacktrace)
 
     def check_environment(
@@ -252,6 +255,15 @@ class TestResult:
         if self.environment:
             self.information.update(self.environment.get_information())
             self.information["environment"] = self.environment.name
+            # if no nodes and case skipped, it means no environment deployed.
+            if (
+                result_message.status == TestResult.status.SKIPPED
+                and len(self.environment.nodes) == 0
+            ):
+                vm_size = self.information.get("vmsize", None)
+                # if vmsize passed from runbook, we override it.
+                if vm_size and len(vm_size.split(",")) > 1:
+                    self.information["vmsize"] = "NotAssigned"
         result_message.information.update(self.information)
         result_message.message = self.message[0:2048] if self.message else ""
         result_message.name = self.runtime_data.metadata.name
@@ -540,24 +552,6 @@ class TestSuite:
         self._should_stop = False
         self.__log = get_logger("suite", metadata.name)
 
-    def before_suite(self, log: Logger, **kwargs: Any) -> None:
-        warnings.simplefilter("always", DeprecationWarning)
-        warn(
-            "before_suite is deprecated. please use before_case",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        warnings.simplefilter("ignore", DeprecationWarning)
-
-    def after_suite(self, log: Logger, **kwargs: Any) -> None:
-        warnings.simplefilter("always", DeprecationWarning)
-        warn(
-            "after_suite is deprecated. please use after_case",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        warnings.simplefilter("ignore", DeprecationWarning)
-
     def before_case(self, log: Logger, **kwargs: Any) -> None:
         ...
 
@@ -584,16 +578,14 @@ class TestSuite:
             "variables": copy.copy(case_variables),
         }
 
-        #  replace to case's logger temporarily
+        is_suite_continue = True
         suite_log = self.__log
-        (
-            is_suite_continue,
-            suite_error_message,
-            suite_error_stacktrace,
-        ) = self.__suite_method(
-            self.before_suite, test_kwargs=test_kwargs, log=suite_log
-        )
-
+        suite_error_stacktrace = None
+        if hasattr(self, "before_suite"):
+            raise LisaException("before_suite is not supported. Please use before_case")
+        if hasattr(self, "after_suite"):
+            raise LisaException("after_suite is not supported. Please use after_case")
+        #  replace to case's logger temporarily
         for case_result in case_results:
             case_name = case_result.runtime_data.name
 
@@ -653,6 +645,9 @@ class TestSuite:
                 log=case_log,
             )
 
+            if case_result.status == TestStatus.FAILED:
+                self.__save_serial_log(environment, case_log_path)
+
             case_log.info(
                 f"result: {case_result.status.name}, " f"elapsed: {total_timer}"
             )
@@ -665,10 +660,17 @@ class TestSuite:
                 suite_log.info("received stop message, stop run")
                 break
 
-        self.__suite_method(self.after_suite, test_kwargs=test_kwargs, log=suite_log)
-
     def stop(self) -> None:
         self._should_stop = True
+
+    def __save_serial_log(self, environment: Environment, log_path: Path) -> None:
+        nodes = environment.nodes
+        for node in nodes.list():
+            if hasattr(node, "features") and node.features.is_supported(SerialConsole):
+                serial_console = node.features[SerialConsole]
+                log_dir = log_path / Path(f"serial_console_{node.name}")
+                log_dir.mkdir(parents=True)
+                serial_console.get_console_log(log_dir, force_run=True)
 
     def __create_case_log_path(self, case_name: str) -> Path:
         while True:
@@ -701,29 +703,6 @@ class TestSuite:
         # test case should create it, when it's used.
         working_path = constants.RUN_LOCAL_WORKING_PATH / test_part_path
         return working_path
-
-    def __suite_method(
-        self, method: Callable[..., Any], test_kwargs: Dict[str, Any], log: Logger
-    ) -> Tuple[bool, str, Optional[str]]:
-        result: bool = True
-        message: str = ""
-        timer = create_timer()
-        method_name = method.__name__
-        stacktrace: Optional[str] = None
-        try:
-            _call_with_retry_and_timeout(
-                method,
-                retries=0,
-                timeout=3600,
-                log=log,
-                test_kwargs=test_kwargs,
-            )
-        except Exception as identifier:
-            result = False
-            message = f"{method_name}: {identifier}"
-            stacktrace = traceback.format_exc()
-        log.debug(f"{method_name} end in {timer}")
-        return result, message, stacktrace
 
     def __before_case(
         self,

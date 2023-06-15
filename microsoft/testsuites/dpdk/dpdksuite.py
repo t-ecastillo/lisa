@@ -138,7 +138,7 @@ class Dpdk(TestSuite):
 
         try:
             # run OVS tests, providing OVS with the NIC info needed for DPDK init
-            ovs.setup_ovs(node.nics.get_nic_by_index().pci_slot)
+            ovs.setup_ovs(node.nics.get_secondary_nic().pci_slot)
 
             # validate if OVS was able to initialize DPDK
             node.execute(
@@ -232,7 +232,7 @@ class Dpdk(TestSuite):
         server_proc = node.execute_async(
             (
                 f"{server_app_path} -l 1-2 -n 4 "
-                f"-b {node.nics.get_nic_by_index(0).pci_slot} -- -p 3 -n 1"
+                f"-b {node.nics.get_primary_nic().pci_slot} -- -p 3 -n 1"
             ),
             sudo=True,
             shell=True,
@@ -247,7 +247,7 @@ class Dpdk(TestSuite):
         client_result = node.execute(
             (
                 f"timeout -s INT 2 {client_app_path} --proc-type=secondary -l 3 -n 4"
-                f" -b {node.nics.get_nic_by_index(0).pci_slot} -- -n 0"
+                f" -b {node.nics.get_primary_nic().pci_slot} -- -n 0"
             ),
             sudo=True,
             shell=True,
@@ -331,7 +331,7 @@ class Dpdk(TestSuite):
     ) -> None:
         test_kit = initialize_node_resources(node, log, variables, "failsafe")
         testpmd = test_kit.testpmd
-        test_nic = node.nics.get_nic_by_index()
+        test_nic = node.nics.get_secondary_nic()
         testpmd_cmd = testpmd.generate_testpmd_command(
             test_nic, 0, "txonly", "failsafe"
         )
@@ -392,14 +392,17 @@ class Dpdk(TestSuite):
         vpp.install()
 
         net = node.nics
-        nic = net.get_nic_by_index()
-
+        nics_dict = {key: value for key, value in net.nics.items() if key != "eth0"}
+        pci_slots = []
         # set devices to down and restart vpp service
         ip = node.tools[Ip]
-        for dev in [nic.lower, nic.upper]:
-            ip.down(dev)
-        for dev in [nic.lower, nic.upper]:
-            ip.addr_flush(dev)
+        start_up_conf = vpp.get_start_up_file_content()
+        for key, value in nics_dict.items():
+            ip.down(key)
+            if value.pci_slot not in start_up_conf:
+                pci_slots.append(f"dev {value.pci_slot}")
+        replace_str = "\n".join(pci_slots)
+        vpp.set_start_up_file(replace_str)
 
         vpp.start()
         vpp.run_test()
@@ -416,6 +419,7 @@ class Dpdk(TestSuite):
         priority=4,
         requirement=simple_requirement(
             min_core_count=8,
+            min_nic_count=2,
             network_interface=Sriov(),
             unsupported_features=[Gpu, Infiniband],
             supported_features=[IsolatedResource],
@@ -605,7 +609,7 @@ class Dpdk(TestSuite):
     ) -> None:
         lsmod = node.tools[Lsmod]
         modprobe = node.tools[Modprobe]
-        nic = node.nics.get_nic_by_index()
+        nic = node.nics.get_secondary_nic()
         node.nics.get_nic_driver(nic.upper)
         if nic.bound_driver == "hv_netvsc":
             enable_uio_hv_generic_for_nic(node, nic)

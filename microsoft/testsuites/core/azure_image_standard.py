@@ -17,6 +17,7 @@ from lisa import (
 )
 from lisa.features import Disk
 from lisa.operating_system import (
+    BSD,
     SLES,
     CBLMariner,
     CoreOs,
@@ -35,7 +36,7 @@ from lisa.operating_system import (
 )
 from lisa.sut_orchestrator import AZURE, READY
 from lisa.sut_orchestrator.azure.features import AzureDiskOptionSettings
-from lisa.tools import Cat, Dmesg, Ls, Lsblk, Lscpu, Pgrep, Ssh, Whoami
+from lisa.tools import Cat, Dmesg, Ls, Lsblk, Lscpu, Pgrep, Ssh
 from lisa.util import (
     LisaException,
     PassedException,
@@ -260,7 +261,9 @@ class AzureImageStandard(TestSuite):
         2. For Redhat based distros, verify that numa is disabled for versions < 6.6.0
         """,
         priority=1,
-        requirement=simple_requirement(supported_platform_type=[AZURE, READY]),
+        requirement=simple_requirement(
+            supported_platform_type=[AZURE, READY], unsupported_os=[BSD]
+        ),
     )
     def verify_grub(self, node: Node) -> None:
         # check grub configuration file
@@ -726,7 +729,7 @@ class AzureImageStandard(TestSuite):
                 )
                 assert_that(
                     is_repository_present,
-                    f"{id} repository should be present",
+                    f"{id_} repository should be present",
                 ).is_true()
         else:
             raise LisaException(f"Unsupported distro type : {type(node.os)}")
@@ -901,7 +904,13 @@ class AzureImageStandard(TestSuite):
             r" \\\"root\\\".\';echo;sleep .*\"",
             re.M,
         )
-        current_user = node.tools[Whoami].get_username()
+        # For Bitnami images, the bitnami.service changes the uid of current user as
+        # 1000 which user 'bitnami' already has.
+        # From https://github.com/coreutils/coreutils/blob/master/src/whoami.c, whoami
+        # gets name from EUID which is 1000. Then the output is 'bitnami' rather than
+        # the current user. So modified to get the admin user from node connection_info
+        remote_node = cast(RemoteNode, node)
+        current_user = str(remote_node.connection_info.get("username"))
         cat = node.tools[Cat]
         if isinstance(node.os, FreeBSD):
             shadow_file = "/etc/master.passwd"
@@ -985,10 +994,13 @@ class AzureImageStandard(TestSuite):
         # function returns successfully if disk matching mount point is present
         node.features[Disk].get_partition_with_mount_point(resource_disk_mount_point)
 
-        # verify lost+found folder exists
-        fold_path = f"{resource_disk_mount_point}/lost+found"
-        folder_exists = node.tools[Ls].path_exists(fold_path, sudo=True)
-        assert_that(folder_exists, f"{fold_path} should be present").is_true()
+        # Verify lost+found folder exists
+        # Skip this step for BSD as it does not have lost+found folder
+        # since it uses UFS file system
+        if not isinstance(node.os, BSD):
+            fold_path = f"{resource_disk_mount_point}/lost+found"
+            folder_exists = node.tools[Ls].path_exists(fold_path, sudo=True)
+            assert_that(folder_exists, f"{fold_path} should be present").is_true()
 
         # verify DATALOSS_WARNING_README.txt file exists
         file_path = f"{resource_disk_mount_point}/DATALOSS_WARNING_README.txt"

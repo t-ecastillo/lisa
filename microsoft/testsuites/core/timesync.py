@@ -1,3 +1,5 @@
+import time
+from copy import deepcopy
 from pathlib import PurePosixPath
 from time import sleep
 from typing import List, Optional, Union, cast
@@ -18,7 +20,9 @@ from lisa import (
 )
 from lisa.operating_system import CpuArchitecture, Redhat
 from lisa.tools import Cat, Chrony, Dmesg, Hwclock, Lscpu, Ntp, Ntpstat, Service
+from lisa.tools.date import Date
 from lisa.tools.lscpu import CpuType
+from lisa.util import constants
 from lisa.util.shell import wait_tcp_port_ready
 
 
@@ -83,7 +87,7 @@ class TimeSync(TestSuite):
         """,
         priority=2,
     )
-    def timesync_validate_ptp(self, node: Node) -> None:
+    def verify_timesync_ptp(self, node: Node) -> None:
         # 1. PTP time source is available on Azure guests (newer versions of Linux).
         dmesg = node.tools[Dmesg]
         assert_that(dmesg.get_output()).contains(self.ptp_registered_msg)
@@ -132,7 +136,7 @@ class TimeSync(TestSuite):
         """,
         priority=2,
     )
-    def timesync_check_unbind_clocksource(self, node: Node, log: Logger) -> None:
+    def verify_timesync_unbind_clocksource(self, node: Node, log: Logger) -> None:
         unbind = node.shell.exists(PurePosixPath(self.unbind_clocksource))
         try:
             # 1. Check clock source name is one of hyperv_clocksource_tsc_page,
@@ -208,8 +212,12 @@ class TimeSync(TestSuite):
                 node.reboot()
                 remote_node = cast(RemoteNode, node)
                 is_ready, _ = wait_tcp_port_ready(
-                    remote_node.public_address,
-                    remote_node.public_port,
+                    remote_node.connection_info[
+                        constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS
+                    ],
+                    remote_node.connection_info[
+                        constants.ENVIRONMENTS_NODES_REMOTE_PORT
+                    ],
                     log=log,
                     timeout=300,
                 )
@@ -228,7 +236,7 @@ class TimeSync(TestSuite):
         """,
         priority=2,
     )
-    def timesync_check_unbind_clockevent(self, node: Node) -> None:
+    def verify_timesync_unbind_clockevent(self, node: Node) -> None:
         if node.shell.exists(PurePosixPath(self.current_clockevent)):
             # 1. Current clock event name is 'Hyper-V clockevent'.
             clockevent_map = {
@@ -300,7 +308,7 @@ class TimeSync(TestSuite):
         """,
         priority=2,
     )
-    def timesync_ntp(self, node: Node) -> None:
+    def verify_timesync_ntp(self, node: Node) -> None:
         if isinstance(node.os, Redhat) and node.os.information.version >= "8.0.0":
             # refer from https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/configuring_basic_system_settings/using-chrony-to-configure-ntp # noqa: E501
             raise SkippedException(
@@ -339,7 +347,7 @@ class TimeSync(TestSuite):
         """,
         priority=2,
     )
-    def timesync_chrony(self, node: Node) -> None:
+    def verify_timesync_chrony(self, node: Node) -> None:
         chrony = node.tools[Chrony]
         # 1. Restart chrony service.
         chrony.restart()
@@ -369,7 +377,7 @@ class TimeSync(TestSuite):
         arch = lscpu.get_architecture()
         if CpuArchitecture(arch) != "aarch64":
             raise SkippedException(
-                f"This test case does not support {arch}."
+                f"This test case does not support {arch}. "
                 "This validation is only for ARM64."
             )
         # Check pmu is disabled in cmdline for arm64 images
@@ -377,3 +385,47 @@ class TimeSync(TestSuite):
         result = cat.run("/proc/cmdline", force_run=True)
         if "initcall_blacklist=arm_pmu_acpi_init" not in result.stdout:
             raise LisaException("PMU is not disabled in kernel cmdline")
+
+    @TestCaseMetadata(
+        description="""
+        This test is to verify that timedrift is automatically corrected by chrony
+        after a time jump.
+
+        Steps:
+        1. Set makestep to 1.0 -1 to allow Chrony to make large adjustments.
+        Ref: https://learn.microsoft.com/en-us/azure/virtual-machines/linux/time-sync#chrony # noqa: E501
+        2. Manually change the system clock to a time in the past.
+        3. Verify that Chrony has corrected the time drift.
+        """,
+        priority=1,
+    )
+    def verify_timedrift_corrected(self, node: Node, log: Logger) -> None:
+        # Initialize chrony
+        chrony = node.tools[Chrony]
+        chrony.set_makestep("1.0 -1")
+        chrony.restart()
+
+        for iteration in range(3):
+            is_drift_corrected = False
+
+            # Get current time
+            date = node.tools[Date]
+            node_time = date.current()
+            modified_time = deepcopy(node_time)
+            modified_time = modified_time.replace(year=node_time.year - 2)
+            date.set(modified_time)
+
+            # Poll every second and check if the time drift is corrected
+            # for 5 minutes
+            for poll_iter in range(120):
+                time.sleep(1)
+                current_time = date.current()
+                if current_time > node_time:
+                    is_drift_corrected = True
+                    break
+                if poll_iter % 10 == 0:
+                    log.debug(
+                        f"Iteration {iteration}: Time drift is not corrected by "
+                        "chrony yet. Retrying..."
+                    )
+            assert_that(is_drift_corrected, "Time drift is not corrected by chrony.")

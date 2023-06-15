@@ -8,6 +8,7 @@ from assertpy import assert_that
 from lisa import (
     Environment,
     Logger,
+    Node,
     RemoteNode,
     SkippedException,
     TcpConnectionException,
@@ -21,6 +22,7 @@ from lisa import (
     search_space,
     simple_requirement,
 )
+from lisa.base_tools import Systemctl
 from lisa.features import NetworkInterface, SerialConsole, StartStop
 from lisa.nic import NicInfo
 from lisa.sut_orchestrator import AZURE
@@ -34,6 +36,7 @@ from lisa.tools import (
     Lscpu,
     Lspci,
 )
+from lisa.util import UnsupportedDistroException, check_till_timeout
 from lisa.util.shell import wait_tcp_port_ready
 from microsoft.testsuites.network.common import (
     cleanup_iperf3,
@@ -69,6 +72,29 @@ class Sriov(TestSuite):
 
     @TestCaseMetadata(
         description="""
+        This case verifies all services state with Sriov enabled.
+
+        Steps,
+        1. Get overrall state from `systemctl status`, if no systemctl command,
+           skip the testing
+        2. The expected state should be `running`
+        """,
+        priority=1,
+        requirement=simple_requirement(
+            network_interface=features.Sriov(),
+        ),
+    )
+    def verify_services_state(self, node: Node) -> None:
+        try:
+            check_till_timeout(
+                lambda: node.tools[Systemctl].state() == "running",
+                timeout_message="wait for systemctl status to be running",
+            )
+        except UnsupportedDistroException as e:
+            raise SkippedException(e) from e
+
+    @TestCaseMetadata(
+        description="""
         This case verifies module of sriov network interface is loaded and each
          synthetic nic is paired with one VF.
 
@@ -83,7 +109,7 @@ class Sriov(TestSuite):
             network_interface=features.Sriov(),
         ),
     )
-    def sriov_basic_validation(self, environment: Environment) -> None:
+    def verify_sriov_basic(self, environment: Environment) -> None:
         vm_nics = initialize_nic_info(environment)
         sriov_basic_test(environment, vm_nics)
 
@@ -300,7 +326,10 @@ class Sriov(TestSuite):
             network_interface_feature = node.features[NetworkInterface]
             network_interface_feature.attach_nics(extra_nic_count=7)
             is_ready, tcp_error_code = wait_tcp_port_ready(
-                node.public_address, node.public_port, log=log, timeout=self.TIME_OUT
+                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
+                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+                log=log,
+                timeout=self.TIME_OUT,
             )
             if is_ready:
                 vm_nics = initialize_nic_info(environment)
@@ -311,8 +340,8 @@ class Sriov(TestSuite):
                     saved_path=log_path, stage="after_attach_nics"
                 )
                 raise TcpConnectionException(
-                    node.public_address,
-                    node.public_port,
+                    node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
+                    node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
                     tcp_error_code,
                     "no panic found in serial log after attach nics",
                 )
@@ -579,7 +608,7 @@ class Sriov(TestSuite):
         network_interface_feature = client_node.features[NetworkInterface]
         for _ in range(3):
             sriov_is_enabled = network_interface_feature.is_enabled_sriov()
-            network_interface_feature.switch_sriov(enable=(not sriov_is_enabled))
+            network_interface_feature.switch_sriov(enable=not sriov_is_enabled)
         network_interface_feature.switch_sriov(enable=True)
 
         # check VF still paired with synthetic nic

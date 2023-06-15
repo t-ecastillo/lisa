@@ -70,6 +70,24 @@
                 "description": "tags of availability set"
             }
         },
+        "virtual_network_resource_group": {
+            "type": "string",
+            "metadata": {
+                "description": "the name of vnet resource group"
+            }
+        },
+        "virtual_network_name": {
+            "type": "string",
+            "metadata": {
+                "description": "the name of vnet"
+            }
+        },
+        "subnet_prefix": {
+            "type": "string",
+            "metadata": {
+                "description": "the prefix of the subnets"
+            }
+        },
         "vm_tags": {
             "type": "object",
             "metadata": {
@@ -90,11 +108,10 @@
         }
     },
     "variables": {
-        "virtual_network_name": "lisa-virtualNetwork",
-        "vnet_id": "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtual_network_name'))]",
+        "vnet_id": "[resourceId('Microsoft.Network/virtualNetworks/', parameters('virtual_network_name'))]",
         "node_count": "[length(parameters('nodes'))]",
         "availability_set_name": "lisa-availabilitySet",
-        "subnet_prefix": "lisa-subnet-"
+        "existing_subnet_ref": "[if(not(empty(parameters('virtual_network_resource_group'))), resourceId(parameters('virtual_network_resource_group'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtual_network_name'), parameters('subnet_prefix')), '')]"
     },
     "resources": [
         {
@@ -123,9 +140,10 @@
             }
         },
         {
+            "condition": "[empty(parameters('virtual_network_resource_group'))]",
             "apiVersion": "2020-05-01",
             "type": "Microsoft.Network/virtualNetworks",
-            "name": "[variables('virtual_network_name')]",
+            "name": "[parameters('virtual_network_name')]",
             "location": "[parameters('location')]",
             "properties": {
                 "addressSpace": {
@@ -138,7 +156,7 @@
                         "name": "subnets",
                         "count": "[parameters('subnet_count')]",
                         "input": {
-                            "name": "[concat(variables('subnet_prefix'), copyIndex('subnets'))]",
+                            "name": "[concat(parameters('subnet_prefix'), copyIndex('subnets'))]",
                             "properties": {
                                 "addressPrefix": "[concat('10.0.', copyIndex('subnets'), '.0/24')]"
                             }
@@ -177,7 +195,10 @@
                         "value": "[variables('vnet_id')]"
                     },
                     "subnet_prefix": {
-                        "value": "[variables('subnet_prefix')]"
+                        "value": "[parameters('subnet_prefix')]"
+                    },
+                    "existing_subnet_ref": {
+                        "value": "[variables('existing_subnet_ref')]"
                     },
                     "enable_sriov": {
                         "value": "[parameters('nodes')[copyIndex('nicCopy')]['enable_sriov']]"
@@ -203,6 +224,9 @@
                         "subnet_prefix": {
                             "type": "string"
                         },
+                        "existing_subnet_ref": {
+                            "type": "string"
+                        },
                         "enable_sriov": {
                             "type": "bool"
                         }
@@ -225,7 +249,7 @@
                                             "privateIPAddressVersion": "IPv4",
                                             "publicIPAddress": "[if(equals(0, copyIndex('internalNicCopy')), network.getPublicIpAddress(parameters('vmName')), json('null'))]",
                                             "subnet": {
-                                                "id": "[concat(parameters('vnet_id'),'/subnets/', concat(parameters('subnet_prefix'), copyIndex('internalNicCopy')))]"
+                                                "id": "[if(not(empty(parameters('existing_subnet_ref'))), parameters('existing_subnet_ref'), concat(parameters('vnet_id'),'/subnets/', concat(parameters('subnet_prefix'), copyIndex('internalNicCopy'))))]"
                                             },
                                             "privateIPAllocationMethod": "Dynamic"
                                         }
@@ -309,7 +333,7 @@
             }
         },
         {
-            "apiVersion": "2022-03-01",
+            "apiVersion": "2022-08-01",
             "type": "Microsoft.Compute/virtualMachines",
             "copy": {
                 "name": "vmCopy",
@@ -332,7 +356,8 @@
                 "osProfile": "[if(and(not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd'])),not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd']['vmgs_path']))), json('null'), lisa.getOsProfile( parameters('nodes')[copyIndex('vmCopy')]['short_name'], parameters('admin_username'), or(empty(parameters('admin_key_data')), not(parameters('nodes')[copyIndex('vmCopy')]['is_linux'])), parameters('admin_password'), and(not(empty(parameters('admin_key_data'))), parameters('nodes')[copyIndex('vmCopy')]['is_linux']), lisa.getLinuxConfiguration(concat('/home/', parameters('admin_username'), '/.ssh/authorized_keys'), parameters('admin_key_data')) ))]",
                 "storageProfile": {
                     "imageReference": "[if(and(not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd'])),not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd']['vmgs_path']))), json('null'), if(and(not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd'])),not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd']['vhd_path']))), lisa.getOsDiskVhd(parameters('nodes')[copyIndex('vmCopy')]['name']), if(not(empty(parameters('nodes')[copyIndex('vmCopy')]['shared_gallery'])), lisa.getOsDiskSharedGallery(parameters('nodes')[copyIndex('vmCopy')]['shared_gallery']), lisa.getOsDiskMarketplace(parameters('nodes')[copyIndex('vmCopy')]))))]",
-                    "osDisk": "[if(and(not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd'])),not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd']['vmgs_path']))),  lisa.getOsDisk(concat(parameters('nodes')[copyIndex('vmCopy')]['name'], '-disk')),  lisa.getOSImage(parameters('nodes')[copyIndex('vmCopy')]) )]",
+                    "osDisk": "[if(and(not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd'])),not(empty(parameters('nodes')[copyIndex('vmCopy')]['vhd']['vmgs_path']))),  lisa.getOsDisk(concat(parameters('nodes')[copyIndex('vmCopy')]['name'], '-disk')),  if(equals(parameters('nodes')[copyIndex('vmCopy')]['disk_type'], 'Ephemeral'), lisa.getEphemeralOSImage(parameters('nodes')[copyIndex('vmCopy')]), lisa.getOSImage(parameters('nodes')[copyIndex('vmCopy')])) )]",
+                    "diskControllerType": "[if(equals(parameters('nodes')[copyIndex('vmCopy')]['disk_controller_type'], 'SCSI'), json('null'), parameters('nodes')[copyIndex('vmCopy')]['disk_controller_type'])]",
                     "copy": [
                         {
                             "name": "dataDisks",
@@ -369,7 +394,8 @@
                         "enabled": true,
                         "storageUri": "[reference(resourceId(parameters('shared_resource_group_name'), 'Microsoft.Storage/storageAccounts', parameters('storage_name')), '2015-06-15').primaryEndpoints['blob']]"
                     }
-                }
+                },
+                "securityProfile": "[if(empty(parameters('nodes')[copyIndex('vmCopy')]['security_profile']), json('null'), lisa.getSecurityProfile(parameters('nodes')[copyIndex('vmCopy')]['security_profile']))]"
             }
         }
     ],
@@ -481,6 +507,24 @@
                         }
                     }
                 },
+                "getSecurityProfile": {
+                    "parameters": [
+                        {
+                            "name": "security_profile",
+                            "type": "object"
+                        }
+                    ],
+                    "output": {
+                        "type": "object",
+                        "value": {
+                            "uefiSettings": {
+                                "secureBootEnabled": "true",
+                                "vTpmEnabled": "true"
+                            },
+                            "securityType": "[parameters('security_profile')['security_type']]"
+                        }
+                    }
+                },
                 "getOSImage": {
                     "parameters": [
                         {
@@ -492,9 +536,32 @@
                         "type": "object",
                         "value": {
                             "name": "[concat(parameters('node')['name'], '-osDisk')]",
-                            "diffDiskSettings": "[if(equals(parameters('node')['disk_type'], 'Ephemeral'), json('{\"option\": \"local\", \"placement\": \"CacheDisk\"}'), json('null'))]",
-                            "managedDisk": "[if(not(equals(parameters('node')['disk_type'], 'Ephemeral')), json(concat('{\"storageAccountType\": \"',parameters('node')['disk_type'],'\"}')), json('null'))]",
+                            "managedDisk": {
+                                "storageAccountType": "[parameters('node')['disk_type']]",
+                                "securityProfile": "[if(or(empty(parameters('node')['security_profile']), not(equals(parameters('node')['security_profile']['security_type'], 'ConfidentialVM'))), json('null'), json(concat('{\"securityEncryptionType\": \"', parameters('node')['security_profile']['encryption_type'], '\"', if(empty(parameters('node')['security_profile']['disk_encryption_set_id']), '', concat(', \"diskEncryptionSet\": {\"id\": \"', parameters('node')['security_profile']['disk_encryption_set_id'], '\"}')), '}')))]"
+                            },
                             "caching": "[if(equals(parameters('node')['disk_type'], 'Ephemeral'), 'ReadOnly', 'ReadWrite')]",
+                            "createOption": "FromImage",
+                            "diskSizeGB": "[parameters('node')['osdisk_size_in_gb']]"
+                        }
+                    }
+                },
+                "getEphemeralOSImage": {
+                    "parameters": [
+                        {
+                            "name": "node",
+                            "type": "object"
+                        }
+                    ],
+                    "output": {
+                        "type": "object",
+                        "value": {
+                            "name": "[concat(parameters('node')['name'], '-osDisk')]",
+                            "diffDiskSettings": {
+                                "option": "local",
+                                "placement": "CacheDisk"
+                            },
+                            "caching": "ReadOnly",
                             "createOption": "FromImage",
                             "diskSizeGB": "[parameters('node')['osdisk_size_in_gb']]"
                         }
