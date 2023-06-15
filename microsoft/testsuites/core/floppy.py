@@ -39,7 +39,7 @@ class Floppy(TestSuite):
     def check_floppy_module(self, node: RemoteNode) -> None:
         os_version = node.os.information.version
         is_centos = isinstance(node.os, CentOs)
-        if is_centos and os_version <= "7.7.0":
+        if is_centos and os_version < "7.8.0":
             raise SkippedException(
                 "CentOS < 7.7 are not receiving fixes for this issue."
             )
