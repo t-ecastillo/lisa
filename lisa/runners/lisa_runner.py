@@ -693,6 +693,25 @@ class LisaRunner(BaseRunner):
 
             test_result.set_status(TestStatus.SKIPPED, reasons)
 
+    def _ignore_features(self, nodes: List[schema.NodeSpace]) -> List[str]:
+        ignored_features: List[str] = []
+        for _, node_requirement in enumerate(nodes):
+            if (
+                node_requirement.features
+                and hasattr(self, "platform")
+                and self.platform.runbook.ignored_capability
+            ):
+                for feature in node_requirement.features:
+                    if str(feature).lower() in list(
+                        map(
+                            str.lower,
+                            self.platform.runbook.ignored_capability,
+                        )
+                    ):
+                        node_requirement.features.items.remove(feature)
+                        ignored_features.append(str(feature))
+        return list(set(ignored_features))
+
     def _merge_test_requirements(
         self,
         test_results: List[TestResult],
@@ -704,6 +723,7 @@ class LisaRunner(BaseRunner):
             is_allow_set=True, items=[platform_type]
         )
 
+        cases_ignored_features: Dict[str, List[str]] = {}
         # if platform defined requirement, replace the requirement from
         # test case.
         for test_result in test_results:
@@ -719,6 +739,10 @@ class LisaRunner(BaseRunner):
 
             if test_result.can_run:
                 assert test_req.environment
+
+                ignored_features = self._ignore_features(test_req.environment.nodes)
+                if ignored_features:
+                    cases_ignored_features[test_result.name] = ignored_features
 
                 environment_requirement = copy.deepcopy(test_req.environment)
                 if platform_requirement:
@@ -771,23 +795,6 @@ class LisaRunner(BaseRunner):
                             test_result.set_status(TestStatus.SKIPPED, str(identifier))
                             break
 
-                        if (
-                            node_requirement.features
-                            and hasattr(self, "platform")
-                            and self.platform.runbook.ignored_capability
-                        ):
-                            node_requirement.features.items = [
-                                x
-                                for x in node_requirement.features
-                                if str(x).lower()
-                                not in list(
-                                    map(
-                                        str.lower,
-                                        self.platform.runbook.ignored_capability,
-                                    )
-                                )
-                            ]
-
                         assert isinstance(platform_requirement.extended_schemas, dict)
                         assert isinstance(node_requirement.extended_schemas, dict)
                         node_requirement.extended_schemas = deep_update_dict(
@@ -803,6 +810,12 @@ class LisaRunner(BaseRunner):
                     # if env prepare or deploy failed and the test result is not
                     # run, the failure will attach to this test result.
                     env.source_test_result = test_result
+
+        for case_name, ignored_features in cases_ignored_features.items():
+            self._log.debug(
+                f"the feature(s) {ignored_features} have "
+                f"been ignored for case {case_name}"
+            )
 
     def _create_platform_requirement(self) -> Optional[schema.NodeSpace]:
         if not hasattr(self, "platform"):
