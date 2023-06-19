@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from assertpy import assert_that
 from retry import retry
 
-from lisa.tools import Ip, Lspci, Tee
+from lisa.tools import Cat, Ip, KernelConfig, Lspci, Modprobe, Tee
 from lisa.util import InitializableMixin, LisaException, constants, find_groups_in_lines
 
 if TYPE_CHECKING:
@@ -29,23 +29,34 @@ class NicInfo:
 
     def __init__(
         self,
-        upper: str,
+        name: str,
+        upper: str = "",
         lower: str = "",
         pci_slot: str = "",
+        is_upper: bool = True,
+        driver_sysfs_path: Optional[PurePosixPath] = None,
+        expected_no_vf: Optional[bool] = None,
     ) -> None:
+        self.name = name
         self.upper = upper
         self.lower = lower
-        self.pci_slot = pci_slot
-        self.ip_addr = ""
         self.mac_addr = ""
+        self.ip_addr = ""
+        self.pci_slot = pci_slot
+        self.is_upper = is_upper
         self.dev_uuid = ""
         self.bound_driver = ""
-        self.driver_sysfs_path = PurePosixPath("")
         self.numa_node = 0
+        if driver_sysfs_path is None:
+            self.driver_sysfs_path = PurePosixPath("")
+        else:
+            self.driver_sysfs_path = driver_sysfs_path
+        self.expected_no_vf = expected_no_vf
 
     def __str__(self) -> str:
         return (
             "NicInfo:\n"
+            f"name: {self.name}\n"
             f"upper: {self.upper}\n"
             f"lower: {self.lower}\n"
             f"pci_slot: {self.pci_slot}\n"
@@ -132,6 +143,23 @@ class Nics(InitializableMixin):
 
     _file_not_exist = re.compile(r"No such file or directory", re.MULTILINE)
 
+    # ConnectX-3 uses mlx4_core
+    # mlx4_en and mlx4_ib depends on mlx4_core
+    #  need remove mlx4_en and mlx4_ib firstly
+    #  otherwise will see modules is in used issue
+    # ConnectX-4/ConnectX-5 uses mlx5_core
+    # mlx5_ib depends on mlx5_core, need remove mlx5_ib firstly
+    _reload_modules_dict: Dict[str, List[str]] = {
+        "mlx5_core": ["mlx5_ib"],
+        "mlx4_core": ["mlx4_en", "mlx4_ib"],
+        "mana": ["mana", "mana_en", "mana_ib"],
+    }
+    _modules_config_dict: Dict[str, str] = {
+        "mlx5_core": "CONFIG_MLX5_CORE",
+        "mlx4_core": "CONFIG_MLX4_CORE",
+        "mana": "CONFIG_MICROSOFT_MANA",
+    }
+
     def __init__(self, node: "Node"):
         super().__init__()
         self._node = node
@@ -147,26 +175,29 @@ class Nics(InitializableMixin):
         return len(self.nics)
 
     def append(self, next_node: NicInfo) -> None:
-        self.nics[next_node.upper] = next_node
+        self.nics[next_node.name] = next_node
 
     def is_empty(self) -> bool:
         return len(self.nics) == 0
 
     def get_unpaired_devices(self) -> List[str]:
-        return [x.upper for x in self.nics.values() if not x.lower]
-
-    def get_upper_nics(self) -> List[str]:
-        return list(self.nics.keys())
+        return [x.name for x in self.nics.values() if not x.lower]
 
     def get_lower_nics(self) -> List[str]:
-        return [x.lower for x in self.nics.values() if x.lower]
+        return [x.name for x in self.nics.values() if x.upper]
+
+    def get_upper_nics_info(self) -> Dict[str, NicInfo]:
+        return {k: v for k, v in self.nics.items() if v.is_upper}
+
+    def get_upper_nics(self) -> List[str]:
+        return [x.name for x in self.nics.values() if x.is_upper]
 
     def get_device_slots(self) -> List[str]:
         return [x.pci_slot for x in self.nics.values() if x.pci_slot]
 
     # update the current nic driver in the NicInfo instance
     # grabs the driver short name and the driver sysfs path
-    def get_nic_driver(self, nic_name: str, store_driver: bool = True) -> str:
+    def get_nic_driver(self, nic_name: str) -> str:
         # get the current driver for the nic from the node
         # sysfs provides a link to the driver entry at device/driver
         nic = self.get_nic(nic_name)
@@ -182,8 +213,7 @@ class Nics(InitializableMixin):
         assert_that(driver_name).described_as(
             f"sysfs entry contained no filename for device driver: {found_link}"
         ).is_not_equal_to("")
-        if store_driver:
-            nic.bound_driver = driver_name
+        nic.bound_driver = driver_name
         return driver_name
 
     def get_nic(self, nic_name: str) -> NicInfo:
@@ -220,19 +250,16 @@ class Nics(InitializableMixin):
             )
         return nic
 
-    def nic_info_is_present(self, nic_name: str) -> bool:
-        return nic_name in self.get_upper_nics() or nic_name in self.get_lower_nics()
-
     def unbind(self, nic: NicInfo) -> None:
         # unbind nic from current driver and return the old sysfs path
         tee = self._node.tools[Tee]
         ip = self._node.tools[Ip]
         # if sysfs path is not set, fetch the current driver
         if not nic.driver_sysfs_path:
-            self.get_nic_driver(nic.upper)
+            self.get_nic_driver(nic.name)
         # if the device is active, set to down before unbind
-        if ip.nic_exists(nic.upper):
-            ip.down(nic.upper)
+        if ip.nic_exists(nic.name):
+            ip.down(nic.name)
         unbind_path = nic.driver_sysfs_path.joinpath("unbind")
         tee.write_to_file(nic.dev_uuid, unbind_path, sudo=True)
 
@@ -268,11 +295,10 @@ class Nics(InitializableMixin):
             nic_name = entry["name"]
             mac = entry["mac"]
             ip_addr = entry["ip_addr"]
-            if nic_name in self.get_upper_nics():
-                nic_entry = self.nics[nic_name]
-                nic_entry.ip_addr = ip_addr
-                nic_entry.mac_addr = mac
-                found_nics.append(nic_name)
+            nic_entry = self.nics[nic_name]
+            nic_entry.ip_addr = ip_addr
+            nic_entry.mac_addr = mac
+            found_nics.append(nic_name)
 
         if not nic_name:
             assert_that(sorted(found_nics)).described_as(
@@ -284,6 +310,15 @@ class Nics(InitializableMixin):
         self.nics.clear()
         self._initialize()
 
+    def check_sriov_enabled(self, sriov_enabled: bool) -> None:
+        if sriov_enabled and not self.get_lower_nics():
+            raise LisaException("SRIOV is enabled, but VF is not found.")
+        elif not sriov_enabled and self.get_lower_nics():
+            raise LisaException("SRIOV is disabled, but VF exists.")
+        else:
+            # the enabled flag is consistent with VF presents.
+            ...
+
     @retry(tries=15, delay=3, backoff=1.15)
     def wait_for_sriov_enabled(self) -> None:
         lspci = self._node.tools[Lspci]
@@ -294,6 +329,8 @@ class Nics(InitializableMixin):
             "Could not identify any SRIOV NICs on the test node."
         ).is_not_zero()
 
+        if self.expected_no_vf():
+            return
         # check if the NIC driver has finished setting up the
         # failsafe pair, reload if not
         if not self.get_lower_nics():
@@ -310,12 +347,13 @@ class Nics(InitializableMixin):
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self._node.log.debug("loading nic information...")
         self.nic_names = self._get_nic_names()
-        self._get_node_nic_info()
+        self._get_nic_info()
+        for nic in [x.name for x in self.nics.values()]:
+            self.get_nic_driver(nic)
         self._get_default_nic()
         self.load_interface_info()
         self._get_nic_uuids()
-        for nic in self.get_upper_nics():
-            self.get_nic_driver(nic)
+        self._get_vf_info()
 
     def _get_nic_names(self) -> List[str]:
         # identify all of the nics on the device, excluding tunnels and loopbacks etc.
@@ -334,11 +372,9 @@ class Nics(InitializableMixin):
         non_virtual_nics = [x for x in all_nics if x not in virtual_nics]
 
         # verify if the nics names are not empty
-        for item in non_virtual_nics:
-            assert_that(item).described_as(
-                "nic name could not be found"
-            ).is_not_equal_to("")
-
+        assert_that(non_virtual_nics).described_as(
+            "nic name could not be found"
+        ).is_not_empty()
         return non_virtual_nics
 
     def _get_nic_device(self, nic_name: str) -> str:
@@ -352,19 +388,16 @@ class Nics(InitializableMixin):
         return base_device_result.stdout
 
     def _get_nic_uuid(self, nic_name: str) -> str:
-        full_dev_path = self._node.execute(
-            f"readlink /sys/class/net/{nic_name}/device",
-            expected_exit_code_failure_message=(
-                f"could not get sysfs device info for {nic_name}"
-            ),
-        )
+        full_dev_path = self._node.execute(f"readlink /sys/class/net/{nic_name}/device")
+        if full_dev_path.stdout == "":
+            return ""
         uuid = os.path.basename(full_dev_path.stdout.strip())
         self._node.log.debug(f"{nic_name} UUID:{uuid}")
         return uuid
 
     def _get_nic_uuids(self) -> None:
-        for nic in self.get_upper_nics():
-            self.nics[nic].dev_uuid = self._get_nic_uuid(nic)
+        for nic_name in self.nics.keys():
+            self.nics[nic_name].dev_uuid = self._get_nic_uuid(nic_name)
 
     def _get_nic_numa_node(self, name: str) -> int:
         result = self._node.execute(
@@ -381,7 +414,7 @@ class Nics(InitializableMixin):
             numa = 0
         return numa
 
-    def _get_node_nic_info(self) -> None:
+    def _get_nic_info(self) -> None:
         # Identify which nics are slaved to master devices.
         # This should be really simple with /usr/bin/ip but experience shows
         # the tool isn't super consistent across distros in this regard
@@ -406,8 +439,15 @@ class Nics(InitializableMixin):
             sriov_match = self.__nic_lower_regex.search(line)
             if sriov_match:
                 upper_nic, lower_nic, pci_slot = sriov_match.groups()
-                nic_info = NicInfo(upper_nic, lower_nic, pci_slot)
-                self.append(nic_info)
+                self.append(NicInfo(name=upper_nic, lower=lower_nic))
+                self.append(
+                    NicInfo(
+                        name=lower_nic,
+                        upper=upper_nic,
+                        pci_slot=pci_slot,
+                        is_upper=False,
+                    )
+                )
             sriov_match = self.__nic_vf_slot_regex.search(line)
             if sriov_match:
                 lower_nic, pci_slot = sriov_match.groups()
@@ -416,24 +456,43 @@ class Nics(InitializableMixin):
                 for nic_name in [x for x in self.nic_names if x != lower_nic]:
                     upper_nic_mac = ip.get_mac(nic_name)
                     if upper_nic_mac == lower_nic_mac:
-                        upper_nic = nic_name
-                        nic_info = NicInfo(upper_nic, lower_nic, pci_slot)
-                        self.append(nic_info)
+                        self.append(NicInfo(name=nic_name, lower=lower_nic))
+                        self.append(
+                            NicInfo(
+                                name=lower_nic,
+                                upper=nic_name,
+                                pci_slot=pci_slot,
+                                is_upper=False,
+                            )
+                        )
                         break
 
         # Collects NIC info for any unpaired NICS
-        for nic_name in [
-            x
-            for x in self.nic_names
-            if x not in self.get_upper_nics() and x not in self.get_lower_nics()
-        ]:
-            nic_info = NicInfo(nic_name)
+        for nic_name in [x for x in self.nic_names if x not in self.nics.keys()]:
+            nic_info = NicInfo(name=nic_name)
             self.append(nic_info)
 
         assert_that(len(self)).described_as(
             "During Lisa nic info initialization, Nics class could not "
             f"find any nics attached to {self._node.name}."
         ).is_greater_than(0)
+
+    def _get_vf_info(self) -> None:
+        lspci = self._node.tools[Lspci]
+        pci_devices = lspci.get_devices_by_type(
+            constants.DEVICE_TYPE_SRIOV, force_run=True
+        )
+        if len(pci_devices) > 0:
+            if (
+                "Device 00ba" in pci_devices[0].device_info
+                and pci_devices[0].vendor == "Microsoft Corporation"
+            ) and (
+                not self._node.tools[KernelConfig].is_enabled("CONFIG_MICROSOFT_MANA")
+            ):
+                for nic in self.nic_names:
+                    self.nics[nic].pci_slot = pci_devices[0].slot
+                    self.nics[nic].lower = nic
+                    self.nics[nic].expected_no_vf = True
 
     def _get_default_nic(self) -> None:
         cmd = "/sbin/ip route"
@@ -456,3 +515,57 @@ class Nics(InitializableMixin):
         ).is_true()
         self.default_nic: str = default_interface_name
         self.default_nic_route = dev_match.group()
+
+    def get_used_module(self) -> str:
+        lspci = self._node.tools[Lspci]
+        pci_devices = lspci.get_devices_by_type(
+            constants.DEVICE_TYPE_SRIOV, force_run=True
+        )
+        # there will not be multiple Mellanox types in one VM
+        # get the used module using any one of sriov device
+        used_module = lspci.get_used_module(pci_devices[0].slot)
+
+        if not used_module:
+            if (
+                "Device 00ba" in pci_devices[0].device_info
+                and pci_devices[0].vendor == "Microsoft Corporation"
+            ) and (
+                not self._node.tools[KernelConfig].is_enabled("CONFIG_MICROSOFT_MANA")
+            ):
+                return "mana"
+            else:
+                raise LisaException("not find used module")
+        return used_module
+
+    def get_used_config(self) -> str:
+        return self._modules_config_dict[self.get_used_module()]
+
+    def is_module_reloadable(self) -> bool:
+        return self._node.tools[KernelConfig].is_built_as_module(self.get_used_config())
+
+    def remove_module(self) -> str:
+        modprobe = self._node.tools[Modprobe]
+        module_in_used = self.get_used_module()
+        assert_that(self._reload_modules_dict).described_as(
+            f"used modules {module_in_used} should be contained"
+            f" in dict {self._reload_modules_dict}"
+        ).contains(module_in_used)
+        modprobe.remove(self._reload_modules_dict[module_in_used])
+        return module_in_used
+
+    def load_module(self, module_name: str) -> None:
+        modprobe = self._node.tools[Modprobe]
+        modprobe.load(module_name)
+
+    def get_packets(self, nic_name: str, name: str = "tx_packets") -> int:
+        cat = self._node.tools[Cat]
+        return int(
+            cat.read(f"/sys/class/net/{nic_name}/statistics/{name}", force_run=True)
+        )
+
+    def expected_no_vf(self) -> bool:
+        primary_nic = self.get_primary_nic()
+        if hasattr(primary_nic, "expected_no_vf") and primary_nic.expected_no_vf:
+            return True
+        else:
+            return False

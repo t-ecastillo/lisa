@@ -26,25 +26,13 @@ from lisa.base_tools import Systemctl
 from lisa.features import NetworkInterface, SerialConsole, StartStop
 from lisa.nic import NicInfo
 from lisa.sut_orchestrator import AZURE
-from lisa.tools import (
-    Cat,
-    Ethtool,
-    Firewall,
-    InterruptInspector,
-    Iperf3,
-    KernelConfig,
-    Lscpu,
-    Lspci,
-)
+from lisa.tools import Cat, Ethtool, Firewall, InterruptInspector, Iperf3, Lscpu, Lspci
 from lisa.util import UnsupportedDistroException, check_till_timeout
 from lisa.util.shell import wait_tcp_port_ready
 from microsoft.testsuites.network.common import (
     cleanup_iperf3,
-    get_used_config,
     initialize_nic_info,
-    load_module,
     remove_extra_nics,
-    remove_module,
     restore_extra_nics,
     sriov_basic_test,
     sriov_disable_enable,
@@ -463,18 +451,18 @@ class Sriov(TestSuite):
     )
     def verify_sriov_reload_modules(self, environment: Environment) -> None:
         for node in environment.nodes.list():
-            if node.tools[KernelConfig].is_built_in(get_used_config(node)):
+            if not node.nics.is_module_reloadable():
                 raise SkippedException(
-                    "current VM's mlx driver is built-in, can not reload."
+                    "current VM's network driver is built-in, can not reload."
                 )
         vm_nics = initialize_nic_info(environment)
         sriov_basic_test(environment, vm_nics)
         module_in_used: Dict[str, str] = {}
         for node in environment.nodes.list():
-            module_in_used[node.name] = remove_module(node)
+            module_in_used[node.name] = node.nics.remove_module()
         sriov_vf_connection_test(environment, vm_nics, remove_module=True)
         for node in environment.nodes.list():
-            load_module(node, module_in_used[node.name])
+            node.nics.load_module(module_in_used[node.name])
         vm_nics = initialize_nic_info(environment)
         sriov_vf_connection_test(environment, vm_nics)
 
@@ -507,15 +495,18 @@ class Sriov(TestSuite):
         client_node = cast(RemoteNode, environment.nodes[1])
         client_ethtool = client_node.tools[Ethtool]
         vm_nics = initialize_nic_info(environment)
+
         # skip test if scatter-gather can't be updated
         for client_nic_info in vm_nics[client_node.name].values():
+            if client_nic_info.expected_no_vf:
+                raise SkippedException("No VF is expected, skipping test.")
             device_sg_settings = client_ethtool.get_device_sg_settings(
-                client_nic_info.upper, True
+                client_nic_info.name, True
             )
             if device_sg_settings.sg_fixed:
                 raise SkippedException(
                     "scatter-gather is fixed, it cannot be changed for device"
-                    f" {client_nic_info.upper}. Skipping test."
+                    f" {client_nic_info.name}. Skipping test."
                 )
             else:
                 break
@@ -561,7 +552,7 @@ class Sriov(TestSuite):
         # verify vf scatter-gather feature has value 'on'
         for client_nic_info in vm_nics[client_node.name].values():
             new_settings = client_ethtool.change_device_sg_settings(
-                client_nic_info.upper, True
+                client_nic_info.name, True
             )
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
                 client_nic_info.lower, True
@@ -575,7 +566,7 @@ class Sriov(TestSuite):
         # verify vf scatter-gather feature has value 'off'
         for client_nic_info in vm_nics[client_node.name].values():
             new_settings = client_ethtool.change_device_sg_settings(
-                client_nic_info.upper, False
+                client_nic_info.name, False
             )
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
                 client_nic_info.lower, True
@@ -625,13 +616,12 @@ class Sriov(TestSuite):
             ).is_equal_to(False)
 
         # reload sriov modules
-        module_built_in = any(
-            node.tools[KernelConfig].is_built_in(get_used_config(node))
-            for node in environment.nodes.list()
+        module_built_as_module = any(
+            node.nics.is_module_reloadable() for node in environment.nodes.list()
         )
-        if not module_built_in:
+        if module_built_as_module:
             for node in environment.nodes.list():
-                load_module(node, remove_module(node))
+                node.nics.load_module(node.nics.remove_module())
 
             # check VF still paired with synthetic nic
             vm_nics = initialize_nic_info(environment)
@@ -693,6 +683,8 @@ class Sriov(TestSuite):
         server_iperf3.run_as_server_async()
         client_interrupt_inspector = client_node.tools[InterruptInspector]
         for _, client_nic_info in vm_nics[client_node.name].items():
+            if client_nic_info.expected_no_vf:
+                raise SkippedException("No VF is expected, skipping test.")
             # 2. Get initial interrupts sum per irq and cpu number on client node.
             # only collect 'Completion Queue Interrupts' irqs
             initial_pci_interrupts_by_irqs = (
