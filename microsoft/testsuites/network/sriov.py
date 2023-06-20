@@ -459,7 +459,7 @@ class Sriov(TestSuite):
         sriov_basic_test(environment, vm_nics)
         module_in_used: Dict[str, str] = {}
         for node in environment.nodes.list():
-            module_in_used[node.name] = node.nics.remove_module()
+            module_in_used[node.name] = node.nics.unload_module()
         sriov_vf_connection_test(environment, vm_nics, remove_module=True)
         for node in environment.nodes.list():
             node.nics.load_module(module_in_used[node.name])
@@ -555,7 +555,7 @@ class Sriov(TestSuite):
                 client_nic_info.name, True
             )
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
-                client_nic_info.lower, True
+                client_nic_info.pci_device_name, True
             )
             assert_that(
                 new_settings.sg_setting,
@@ -569,7 +569,7 @@ class Sriov(TestSuite):
                 client_nic_info.name, False
             )
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
-                client_nic_info.lower, True
+                client_nic_info.pci_device_name, True
             )
             assert_that(
                 new_settings.sg_setting,
@@ -588,7 +588,7 @@ class Sriov(TestSuite):
         # check VF's scatter-gather feature keep consistent with previous status
         for client_nic_info in vm_nics[client_node.name].values():
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
-                client_nic_info.lower, True
+                client_nic_info.pci_device_name, True
             )
             assert_that(
                 device_vf_sg_settings.sg_setting,
@@ -608,7 +608,7 @@ class Sriov(TestSuite):
         # check VF's scatter-gather feature keep consistent with previous status
         for client_nic_info in vm_nics[client_node.name].values():
             device_vf_sg_settings = client_ethtool.get_device_sg_settings(
-                client_nic_info.lower, True
+                client_nic_info.pci_device_name, True
             )
             assert_that(
                 device_vf_sg_settings.sg_setting,
@@ -621,7 +621,7 @@ class Sriov(TestSuite):
         )
         if module_built_as_module:
             for node in environment.nodes.list():
-                node.nics.load_module(node.nics.remove_module())
+                node.nics.load_module(node.nics.unload_module())
 
             # check VF still paired with synthetic nic
             vm_nics = initialize_nic_info(environment)
@@ -629,7 +629,7 @@ class Sriov(TestSuite):
             # check VF's scatter-gather feature keep consistent with previous status
             for client_nic_info in vm_nics[client_node.name].values():
                 device_vf_sg_settings = client_ethtool.get_device_sg_settings(
-                    client_nic_info.lower, True
+                    client_nic_info.pci_device_name, True
                 )
                 assert_that(
                     device_vf_sg_settings.sg_setting,

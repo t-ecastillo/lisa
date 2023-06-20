@@ -806,7 +806,7 @@ class NetworkInterface(AzureFeatureMixin, features.NetworkInterface):
         self._node.nics.reload()
         if self._node.nics.expected_no_vf():
             return
-        self._node.nics.check_sriov_enabled(enabled)
+        self._node.nics.check_pci_enabled(enabled)
 
     def _get_primary(
         self, nics: List[NetworkInterfaceReference]

@@ -18,8 +18,12 @@ from lisa import (
     schema,
     search_space,
 )
+<<<<<<< HEAD
 from lisa.features import Gpu, Infiniband, IsolatedResource, NetworkInterface, Sriov
 from lisa.operating_system import BSD, Windows
+=======
+from lisa.features import Gpu, Infiniband, IsolatedResource, NetworkInterface, Sriov, SerialConsole
+>>>>>>> 6a228c33 (fix)
 from lisa.testsuite import simple_requirement
 from lisa.tools import Echo, Git, Ip, Kill, Lsmod, Make, Modprobe, Service
 from lisa.util.constants import SIGINT
@@ -557,7 +561,7 @@ class Dpdk(TestSuite):
             network_interface=Sriov(),
             min_count=2,
             unsupported_features=[Gpu, Infiniband],
-            supported_features=[IsolatedResource],
+            supported_features=[IsolatedResource, SerialConsole],
         ),
     )
     def verify_dpdk_send_receive_failsafe(

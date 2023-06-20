@@ -5,6 +5,7 @@
 import os
 import re
 from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -19,31 +20,29 @@ if TYPE_CHECKING:
 
 
 class NicInfo:
-    # Class for info about an single upper/lower nic pair.
-    # Devices using SRIOV on azure typically have an upper synthetic device
-    # paired with a lower SRIOV Virtual Function (VF) device that
+    # Class for info about an single nic/pci device pair.
+    # Devices using AN on azure typically have an network interface (NIC).
+    # paired with a PCI device that
     # enables the passthrough to the physical NIC.
 
-    # If sriov(AN) is not enabled then there will not be a lower SRIOV VF.
-    # In this case, NicInfo will have lower = ""
+    # If AN is not enabled then there will not be a pci device.
+    # In this case, NicInfo will have pci_device_name = ""
 
     def __init__(
         self,
         name: str,
-        upper: str = "",
-        lower: str = "",
+        pci_device_name: str = "",
         pci_slot: str = "",
-        is_upper: bool = True,
+        pci_module_name: str = "",
         driver_sysfs_path: Optional[PurePosixPath] = None,
-        expected_no_vf: Optional[bool] = None,
+        has_pci_device: Optional[bool] = None,
+        has_pci_module: Optional[bool] = None,
     ) -> None:
         self.name = name
-        self.upper = upper
-        self.lower = lower
+        self.pci_device_name = pci_device_name
         self.mac_addr = ""
         self.ip_addr = ""
         self.pci_slot = pci_slot
-        self.is_upper = is_upper
         self.dev_uuid = ""
         self.bound_driver = ""
         self.numa_node = 0
@@ -51,14 +50,14 @@ class NicInfo:
             self.driver_sysfs_path = PurePosixPath("")
         else:
             self.driver_sysfs_path = driver_sysfs_path
-        self.expected_no_vf = expected_no_vf
+        self.has_pci_device = has_pci_device
+        self.has_pci_module = has_pci_module
+        self.pci_module_name = pci_module_name
 
     def __str__(self) -> str:
         return (
             "NicInfo:\n"
             f"name: {self.name}\n"
-            f"upper: {self.upper}\n"
-            f"lower: {self.lower}\n"
             f"pci_slot: {self.pci_slot}\n"
             f"ip_addr: {self.ip_addr}\n"
             f"mac_addr: {self.mac_addr}\n"
@@ -67,7 +66,7 @@ class NicInfo:
 
 class Nics(InitializableMixin):
     # Class for all of the nics on a node. Contains multiple NodeNic classes.
-    # Init identifies upper/lower paired devices and the pci slot info for the lower.
+    # Init identifies nic/pci paired devices and the pci slot info for the pci device.
 
     # regexes for seperating and parsing ip_addr_show entries
     # ex:
@@ -121,11 +120,11 @@ class Nics(InitializableMixin):
     # ex:
     # /sys/class/net/eth0/lower_enP13530s1 -> ../../../ (continued next line)
     # ad379351-34da-4568-93a3-03878ae8eee8/pci34da:00/34da:00:02.0/net/enP13530s1
-    __nic_lower_regex = re.compile(
+    __nic_pci_device_regex = re.compile(
         (
             r"/sys/class/net/"
-            r"([a-zA-Z0-9_\-]+)"  # upper interface GROUP1
-            r"/lower_([a-zA-Z0-9_\-]+)"  # lower interface GROUP2
+            r"([a-zA-Z0-9_\-]+)"  # network interface GROUP1
+            r"/lower_([a-zA-Z0-9_\-]+)"  # pci interface GROUP2
             r"/device -> ../../../"  # link to devices guid
             r"([a-zA-Z0-9]{4}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}.[a-zA-Z0-9])"  # bus info
         )
@@ -135,7 +134,7 @@ class Nics(InitializableMixin):
     __nic_vf_slot_regex = re.compile(
         (
             r"/sys/class/net/"
-            r"([a-zA-Z0-9_\-]+)"  # lower interface name
+            r"([a-zA-Z0-9_\-]+)"  # pci interface name
             r"/device -> ../../../"  # link to devices guid
             r"([a-zA-Z0-9]{4}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}.[a-zA-Z0-9])"  # bus info
         )
@@ -149,15 +148,17 @@ class Nics(InitializableMixin):
     #  otherwise will see modules is in used issue
     # ConnectX-4/ConnectX-5 uses mlx5_core
     # mlx5_ib depends on mlx5_core, need remove mlx5_ib firstly
-    _reload_modules_dict: Dict[str, List[str]] = {
-        "mlx5_core": ["mlx5_ib"],
-        "mlx4_core": ["mlx4_en", "mlx4_ib"],
-        "mana": ["mana", "mana_en", "mana_ib"],
-    }
-    _modules_config_dict: Dict[str, str] = {
-        "mlx5_core": "CONFIG_MLX5_CORE",
-        "mlx4_core": "CONFIG_MLX4_CORE",
-        "mana": "CONFIG_MICROSOFT_MANA",
+    @dataclass
+    class ModuleInformation:
+        drivers: List[str]
+        configs: List[str]
+
+    _device_module_map = {
+        "mlx5_core": ModuleInformation(["mlx5_ib"], ["CONFIG_MLX5_CORE"]),
+        "mlx4_core": ModuleInformation(["mlx4_en", "mlx4_ib"], ["CONFIG_MLX4_CORE"]),
+        "mana": ModuleInformation(
+            ["mana", "mana_en", "mana_ib"], ["CONFIG_MICROSOFT_MANA"]
+        ),
     }
 
     def __init__(self, node: "Node"):
@@ -181,16 +182,13 @@ class Nics(InitializableMixin):
         return len(self.nics) == 0
 
     def get_unpaired_devices(self) -> List[str]:
-        return [x.name for x in self.nics.values() if not x.lower]
+        return [x.name for x in self.nics.values() if not x.pci_device_name]
 
-    def get_lower_nics(self) -> List[str]:
-        return [x.name for x in self.nics.values() if x.upper]
+    def get_pci_nics(self) -> List[str]:
+        return [x.pci_device_name for x in self.nics.values() if x.pci_device_name]
 
-    def get_upper_nics_info(self) -> Dict[str, NicInfo]:
-        return {k: v for k, v in self.nics.items() if v.is_upper}
-
-    def get_upper_nics(self) -> List[str]:
-        return [x.name for x in self.nics.values() if x.is_upper]
+    def get_nics(self) -> List[str]:
+        return list(self.nics.keys())
 
     def get_device_slots(self) -> List[str]:
         return [x.pci_slot for x in self.nics.values() if x.pci_slot]
@@ -230,15 +228,15 @@ class Nics(InitializableMixin):
     def get_nic_by_index(self, index: int = -1) -> NicInfo:
         # get nic by index, default is -1 to give a non-primary nic
         # when there are more than one nic on the system
-        number_of_nics = len(self.get_upper_nics())
+        number_of_nics = len(self.get_nics())
         assert_that(number_of_nics).is_greater_than(0)
         try:
-            nic_name = self.get_upper_nics()[index]
+            nic_name = self.get_nics()[index]
         except IndexError:
             raise LisaException(
-                f"Attempted get_upper_nics()[{index}], only "
+                f"Attempted get_nics()[{index}], only "
                 f"{number_of_nics} nics are registered in node.nics. "
-                f"Had upper interfaces: {self.get_upper_nics()}"
+                f"Had network interfaces: {self.get_nics()}"
             )
 
         try:
@@ -246,7 +244,7 @@ class Nics(InitializableMixin):
         except KeyError:
             raise LisaException(
                 f"NicInfo for interface {nic_name} not found! "
-                f"Had upper interfaces: {self.get_upper_nics()}"
+                f"Had network interfaces: {self.get_nics()}"
             )
         return nic
 
@@ -310,14 +308,10 @@ class Nics(InitializableMixin):
         self.nics.clear()
         self._initialize()
 
-    def check_sriov_enabled(self, sriov_enabled: bool) -> None:
-        if sriov_enabled and not self.get_lower_nics():
-            raise LisaException("SRIOV is enabled, but VF is not found.")
-        elif not sriov_enabled and self.get_lower_nics():
-            raise LisaException("SRIOV is disabled, but VF exists.")
-        else:
-            # the enabled flag is consistent with VF presents.
-            ...
+    def check_pci_enabled(self, sriov_enabled: bool) -> None:
+        assert_that(sriov_enabled).described_as(
+            "AN enablement and pci device are inconsistent"
+        ).is_equal_to(any(self.get_pci_nics()))
 
     @retry(tries=15, delay=3, backoff=1.15)
     def wait_for_sriov_enabled(self) -> None:
@@ -333,13 +327,13 @@ class Nics(InitializableMixin):
             return
         # check if the NIC driver has finished setting up the
         # failsafe pair, reload if not
-        if not self.get_lower_nics():
+        if not self.get_pci_nics():
             self.reload()
-        if not self.get_lower_nics():
-            assert_that(self.get_lower_nics()).described_as(
-                "Did not detect any upper/lower sriov paired nics!: "
-                f"upper: {self.get_upper_nics()} "
-                f"lower: {self.get_lower_nics()} "
+        if not self.get_pci_nics():
+            assert_that(self.get_pci_nics()).described_as(
+                "Did not detect any synthetic/pci paired nics!: "
+                f"synthetic: {self.get_nics()} "
+                f"pci: {self.get_pci_nics()} "
                 f"unpaired: {self.get_unpaired_devices()}"
                 f"vfs: {','.join([str(pci) for pci in vfs])}"
             ).is_not_empty()
@@ -347,7 +341,7 @@ class Nics(InitializableMixin):
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self._node.log.debug("loading nic information...")
         self.nic_names = self._get_nic_names()
-        self._get_nic_info()
+        self._load_nics()
         for nic in [x.name for x in self.nics.values()]:
             self.get_nic_driver(nic)
         self._get_default_nic()
@@ -414,14 +408,15 @@ class Nics(InitializableMixin):
             numa = 0
         return numa
 
-    def _get_nic_info(self) -> None:
+    def _load_nics(self) -> None:
         # Identify which nics are slaved to master devices.
         # This should be really simple with /usr/bin/ip but experience shows
         # the tool isn't super consistent across distros in this regard
 
-        # use sysfs to gather upper/lower nic pairings and pci slot info
+        # use sysfs to gather synthetic/pci nic pairings and pci slot info
         nic_info_fetch_cmd = "ls -la /sys/class/net/*/lower*/device"
         self._node.log.debug(f"Gathering NIC information on {self._node.name}.")
+        lspci = self._node.tools[Lspci]
         result = self._node.execute(
             nic_info_fetch_cmd,
             shell=True,
@@ -436,33 +431,42 @@ class Nics(InitializableMixin):
             )
 
         for line in result.stdout.splitlines():
-            sriov_match = self.__nic_lower_regex.search(line)
+            sriov_match = self.__nic_pci_device_regex.search(line)
             if sriov_match:
-                upper_nic, lower_nic, pci_slot = sriov_match.groups()
-                self.append(NicInfo(name=upper_nic, lower=lower_nic))
+                nic_name, pci_device_name, pci_slot = sriov_match.groups()
+                used_module = lspci.get_used_module(pci_slot)
+                if used_module:
+                    has_pci_module = True
                 self.append(
                     NicInfo(
-                        name=lower_nic,
-                        upper=upper_nic,
+                        name=nic_name,
+                        pci_device_name=pci_device_name,
+                        has_pci_device=True,
+                        has_pci_module=has_pci_module,
                         pci_slot=pci_slot,
-                        is_upper=False,
+                        pci_module_name=used_module,
                     )
                 )
+
             sriov_match = self.__nic_vf_slot_regex.search(line)
             if sriov_match:
-                lower_nic, pci_slot = sriov_match.groups()
+                pci_device_name, pci_slot = sriov_match.groups()
                 ip = self._node.tools[Ip]
-                lower_nic_mac = ip.get_mac(lower_nic)
-                for nic_name in [x for x in self.nic_names if x != lower_nic]:
-                    upper_nic_mac = ip.get_mac(nic_name)
-                    if upper_nic_mac == lower_nic_mac:
-                        self.append(NicInfo(name=nic_name, lower=lower_nic))
+                pci_nic_mac = ip.get_mac(pci_device_name)
+                for nic_name in [x for x in self.nic_names if x != pci_device_name]:
+                    synthetic_nic_mac = ip.get_mac(nic_name)
+                    if synthetic_nic_mac == pci_nic_mac:
+                        used_module = lspci.get_used_module(pci_slot)
+                        if used_module:
+                            has_pci_module = True
                         self.append(
                             NicInfo(
-                                name=lower_nic,
-                                upper=nic_name,
+                                name=nic_name,
+                                pci_device_name=pci_device_name,
+                                has_pci_device=True,
+                                has_pci_module=has_pci_module,
                                 pci_slot=pci_slot,
-                                is_upper=False,
+                                pci_module_name=used_module,
                             )
                         )
                         break
@@ -491,8 +495,7 @@ class Nics(InitializableMixin):
             ):
                 for nic in self.nic_names:
                     self.nics[nic].pci_slot = pci_devices[0].slot
-                    self.nics[nic].lower = nic
-                    self.nics[nic].expected_no_vf = True
+                    self.nics[nic].pci_device_name = nic
 
     def _get_default_nic(self) -> None:
         cmd = "/sbin/ip route"
@@ -543,7 +546,7 @@ class Nics(InitializableMixin):
     def is_module_reloadable(self) -> bool:
         return self._node.tools[KernelConfig].is_built_as_module(self.get_used_config())
 
-    def remove_module(self) -> str:
+    def unload_module(self) -> str:
         modprobe = self._node.tools[Modprobe]
         module_in_used = self.get_used_module()
         assert_that(self._reload_modules_dict).described_as(

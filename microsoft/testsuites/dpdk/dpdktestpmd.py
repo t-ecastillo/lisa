@@ -215,7 +215,7 @@ class DpdkTestpmd(Tool):
                 fail(
                     (
                         f"Unknown driver({nic.bound_driver}) bound to "
-                        f"{nic.name}/{nic.lower}."
+                        f"{nic.name}/{nic.pci_device_name}."
                         "Cannot generate testpmd include arguments."
                     )
                 )

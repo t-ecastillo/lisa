@@ -33,7 +33,7 @@ def initialize_nic_info(
             ).is_greater_than(0)
         nics_info = Nics(node)
         nics_info.initialize()
-        for node_nic in nics_info.get_upper_nics_info().values():
+        for node_nic in nics_info.nics.values():
             # for some old distro, need run dhclient to get ip address for extra nics
             for mac, ip in interfaces_info_dict.items():
                 if mac == node_nic.mac_addr:
@@ -53,7 +53,8 @@ def initialize_nic_info(
                 f"VF count inside VM is {len(set(nics_info.get_device_slots()))},"
                 f"actual sriov nic count is {sriov_count}"
             ).is_equal_to(sriov_count)
-        vm_nics[node.name] = nics_info.get_upper_nics_info()
+        vm_nics[node.name] = nics_info.nics
+
     return vm_nics
 
 
@@ -119,8 +120,8 @@ def sriov_vf_connection_test(
         source_ip = source_nic_info.ip_addr
         source_synthetic_nic = source_nic_info.name
         dest_synthetic_nic = desc_nic_info.name
-        source_nic = source_vf_nic = source_nic_info.lower
-        dest_nic = dest_vf_nic = desc_nic_info.lower
+        source_nic = source_vf_nic = source_nic_info.pci_device_name
+        dest_nic = dest_vf_nic = desc_nic_info.pci_device_name
 
         if remove_module or turn_off_vf:
             source_nic = source_synthetic_nic

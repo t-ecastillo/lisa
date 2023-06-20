@@ -337,7 +337,7 @@ def initialize_node_resources(
         node.mark_dirty()
         enable_uio_hv_generic_for_nic(node, test_nic)
         # if this device is paired, set the upper device 'down'
-        if test_nic.lower:
+        if test_nic.pci_device_name:
             node.nics.unbind(test_nic)
             node.nics.bind(test_nic, UIO_HV_GENERIC_SYSFS_PATH)
 
@@ -461,7 +461,7 @@ def verify_dpdk_build(
     testpmd.run_for_n_seconds(testpmd_cmd, 10)
     tx_pps = testpmd.get_mean_tx_pps()
     log.info(
-        f"TX-PPS:{tx_pps} from {test_nic.name}/{test_nic.lower}:"
+        f"TX-PPS:{tx_pps} from {test_nic.name}/{test_nic.pci_device_name}:"
         + f"{test_nic.pci_slot}"
     )
     assert_that(tx_pps).described_as(
