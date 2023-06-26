@@ -22,7 +22,6 @@ from lisa.operating_system import CpuArchitecture, Redhat
 from lisa.tools import Cat, Chrony, Dmesg, Hwclock, Lscpu, Ntp, Ntpstat, Service
 from lisa.tools.date import Date
 from lisa.tools.lscpu import CpuType
-from lisa.util import constants
 from lisa.util.shell import wait_tcp_port_ready
 
 
@@ -212,12 +211,8 @@ class TimeSync(TestSuite):
                 node.reboot()
                 remote_node = cast(RemoteNode, node)
                 is_ready, _ = wait_tcp_port_ready(
-                    remote_node.connection_info[
-                        constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS
-                    ],
-                    remote_node.connection_info[
-                        constants.ENVIRONMENTS_NODES_REMOTE_PORT
-                    ],
+                    remote_node.connection_info.address,
+                    remote_node.connection_info.port,
                     log=log,
                     timeout=300,
                 )

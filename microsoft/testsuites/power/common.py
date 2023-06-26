@@ -9,7 +9,7 @@ from lisa import Environment, Logger, RemoteNode, features
 from lisa.features import StartStop
 from lisa.operating_system import Redhat, Suse, Ubuntu
 from lisa.tools import Fio, HibernationSetup, Iperf3, KernelConfig, Kill, Lscpu
-from lisa.util import LisaException, SkippedException, constants
+from lisa.util import LisaException, SkippedException
 from lisa.util.perf_timer import create_timer
 from lisa.util.shell import wait_tcp_port_ready
 
@@ -49,8 +49,8 @@ def verify_hibernation(node: RemoteNode, log: Logger) -> None:
     timer = create_timer()
     while timeout > timer.elapsed(False):
         is_ready, _ = wait_tcp_port_ready(
-            node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
-            node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+            node.connection_info.address,
+            node.connection_info.port,
             log=log,
             timeout=10,
         )

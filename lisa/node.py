@@ -530,18 +530,8 @@ class RemoteNode(Node):
         return True
 
     @property
-    def connection_info(self) -> Dict[str, Any]:
-        return fields_to_dict(
-            self._connection_info,
-            [
-                constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS,
-                constants.ENVIRONMENTS_NODES_REMOTE_PORT,
-                constants.ENVIRONMENTS_NODES_REMOTE_USERNAME,
-                constants.ENVIRONMENTS_NODES_REMOTE_PASSWORD,
-                constants.ENVIRONMENTS_NODES_REMOTE_PRIVATE_KEY_FILE,
-            ],
-            is_none_included=True,
-        )
+    def connection_info(self) -> schema.ConnectionInfo:
+        return self._connection_info
 
     @classmethod
     def type_name(cls) -> str:
@@ -613,11 +603,14 @@ class RemoteNode(Node):
         assert port
 
         self._connection_info: schema.ConnectionInfo = schema.ConnectionInfo(
-            public_address if use_public_address else address,
-            public_port if use_public_address else port,
+            address,
+            port,
             username,
             password,
             private_key_file,
+            use_public_address,
+            public_address,
+            public_port,
         )
         self._shell = SshShell(self._connection_info)
 

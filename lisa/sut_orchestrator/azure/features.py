@@ -56,7 +56,6 @@ from lisa.util import (
     SkippedException,
     UnsupportedOperationException,
     check_till_timeout,
-    constants,
     field_metadata,
     find_patterns_in_lines,
     generate_random_chars,
@@ -134,9 +133,18 @@ class StartStop(AzureFeatureMixin, features.StartStop):
             platform, self._resource_group_name, get_vm(platform, self._node)
         )
         node_info = self._node.connection_info
-        node_info[constants.ENVIRONMENTS_NODES_REMOTE_PUBLIC_ADDRESS] = public_ip
-        node_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS] = private_ip
-        self._node.set_connection_info(**node_info)
+        node_info.public_address = public_ip
+        node_info.address = private_ip
+        self._node.set_connection_info(
+            node_info.address,
+            node_info.port,
+            node_info.use_public_address if node_info.use_public_address else True,
+            node_info.public_address,
+            node_info.public_port,
+            node_info.username,
+            node_info.password if node_info.password else "",
+            node_info.private_key_file if node_info.private_key_file else "",
+        )
         self._node._is_initialized = False
         self._node.initialize()
 

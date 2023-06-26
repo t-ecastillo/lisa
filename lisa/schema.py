@@ -1439,6 +1439,14 @@ class ConnectionInfo:
     username: str = constants.DEFAULT_USER_NAME
     password: Optional[str] = ""
     private_key_file: Optional[str] = ""
+    use_public_address: Optional[bool] = None
+    public_address: str = ""
+    public_port: int = field(
+        default=22,
+        metadata=field_metadata(
+            field_function=fields.Int, validate=validate.Range(min=1, max=65535)
+        ),
+    )
 
     def __post_init__(self, *args: Any, **kwargs: Any) -> None:
         add_secret(self.username, PATTERN_HEADTAIL)

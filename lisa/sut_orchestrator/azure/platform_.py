@@ -2120,9 +2120,7 @@ class AzurePlatform(Platform):
 
         remote_node = cast(RemoteNode, node)
 
-        node_ssh_port = remote_node.connection_info[
-            constants.ENVIRONMENTS_NODES_REMOTE_PORT
-        ]
+        node_ssh_port = remote_node.connection_info.port
         log = node.log
         log.debug(
             f"checking if SSH port {node_ssh_port} is reachable "
@@ -2130,10 +2128,8 @@ class AzurePlatform(Platform):
         )
 
         connected, _ = wait_tcp_port_ready(
-            address=remote_node.connection_info[
-                constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS
-            ],
-            port=remote_node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+            address=remote_node.connection_info.address,
+            port=remote_node.connection_info.port,
             log=log,
             timeout=3,
         )

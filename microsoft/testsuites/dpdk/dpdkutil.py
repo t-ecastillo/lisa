@@ -478,12 +478,10 @@ def verify_dpdk_send_receive(
     multiple_queues: bool = False,
 ) -> Tuple[DpdkTestResources, DpdkTestResources]:
     # helpful to have the public ips labeled for debugging
-    external_ips = []
+    external_ips: List[str] = []
     for node in environment.nodes.list():
         if isinstance(node, RemoteNode):
-            external_ips += node.connection_info[
-                constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS
-            ]
+            external_ips += node.connection_info.address
         else:
             raise SkippedException()
     log.debug((f"\nsender:{external_ips[0]}\nreceiver:{external_ips[1]}\n"))

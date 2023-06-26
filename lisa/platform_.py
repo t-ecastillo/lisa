@@ -205,7 +205,7 @@ class Platform(subclasses.BaseClassWithRunbookMixin, InitializableMixin):
 
             # output addresses for troubleshooting easier.
             remote_addresses = [
-                x.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS]
+                x.connection_info.address
                 for x in environment.nodes.list()
                 if isinstance(x, RemoteNode) and hasattr(x, "_connection_info")
             ]

@@ -910,7 +910,7 @@ class AzureImageStandard(TestSuite):
         # gets name from EUID which is 1000. Then the output is 'bitnami' rather than
         # the current user. So modified to get the admin user from node connection_info
         remote_node = cast(RemoteNode, node)
-        current_user = str(remote_node.connection_info.get("username"))
+        current_user = str(remote_node.connection_info.username)
         cat = node.tools[Cat]
         if isinstance(node.os, FreeBSD):
             shadow_file = "/etc/master.passwd"

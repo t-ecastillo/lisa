@@ -326,8 +326,8 @@ class Sriov(TestSuite):
             network_interface_feature = node.features[NetworkInterface]
             network_interface_feature.attach_nics(extra_nic_count=7)
             is_ready, tcp_error_code = wait_tcp_port_ready(
-                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
-                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+                node.connection_info.address,
+                node.connection_info.port,
                 log=log,
                 timeout=self.TIME_OUT,
             )
@@ -340,8 +340,8 @@ class Sriov(TestSuite):
                     saved_path=log_path, stage="after_attach_nics"
                 )
                 raise TcpConnectionException(
-                    node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
-                    node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+                    node.connection_info.address,
+                    node.connection_info.port,
                     tcp_error_code,
                     "no panic found in serial log after attach nics",
                 )

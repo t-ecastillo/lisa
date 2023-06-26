@@ -16,7 +16,7 @@ from lisa import (
 from lisa.features import SerialConsole
 from lisa.operating_system import CentOs, Redhat
 from lisa.tools import Reboot, Uname
-from lisa.util import SkippedException, TcpConnectionException, constants
+from lisa.util import SkippedException, TcpConnectionException
 from lisa.util.shell import wait_tcp_port_ready
 
 
@@ -63,8 +63,8 @@ class Boot(TestSuite):
         reboot_tool.reboot_and_check_panic(log_path)
 
         is_ready, tcp_error_code = wait_tcp_port_ready(
-            node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
-            node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+            node.connection_info.address,
+            node.connection_info.port,
             log=log,
         )
         if is_ready:
@@ -77,8 +77,8 @@ class Boot(TestSuite):
             ).contains("debug")
         else:
             raise TcpConnectionException(
-                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS],
-                node.connection_info[constants.ENVIRONMENTS_NODES_REMOTE_PORT],
+                node.connection_info.address,
+                node.connection_info.port,
                 tcp_error_code,
                 "no panic found in serial log",
             )

@@ -663,7 +663,7 @@ class BaseLibvirtPlatform(Platform, IBaseLibvirtPlatform):
         if self.host_node.is_remote:
             remote_node = cast(RemoteNode, self.host_node)
             conn_info = remote_node.connection_info
-            address = conn_info[constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS]
+            address = conn_info.address
 
         for node in environment.nodes.list():
             assert isinstance(node, RemoteNode)

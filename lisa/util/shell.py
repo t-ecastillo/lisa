@@ -133,13 +133,19 @@ def try_connect(
     # error in paramiko.
     paramiko_client.set_missing_host_key_policy(paramiko.MissingHostKeyPolicy())
 
+    if connection_info.use_public_address:
+        address = connection_info.public_address
+        port = connection_info.public_port
+    else:
+        address = connection_info.address
+        port = connection_info.port
     # wait for ssh port to be ready
     timeout_start = time.time()
     while time.time() < timeout_start + ssh_timeout:
         try:
             paramiko_client.connect(
-                hostname=connection_info.address,
-                port=connection_info.port,
+                hostname=address,
+                port=port,
                 username=connection_info.username,
                 password=connection_info.password,
                 key_filename=connection_info.private_key_file,

@@ -21,6 +21,7 @@ from lisa.util import (
     LisaException,
     constants,
     field_metadata,
+    fields_to_dict,
     get_date_str,
     get_datetime_path,
 )
@@ -311,7 +312,22 @@ class DeployTransformer(Transformer):
         node: RemoteNode = cast(RemoteNode, environment.default_node)
         connection_info = node.connection_info
         assert connection_info
-        results.update(connection_info)
+        results.update(
+            fields_to_dict(
+                connection_info,
+                [
+                    constants.ENVIRONMENTS_NODES_REMOTE_ADDRESS,
+                    constants.ENVIRONMENTS_NODES_REMOTE_PORT,
+                    constants.ENVIRONMENTS_NODES_REMOTE_USERNAME,
+                    constants.ENVIRONMENTS_NODES_REMOTE_PASSWORD,
+                    constants.ENVIRONMENTS_NODES_REMOTE_PRIVATE_KEY_FILE,
+                    constants.ENVIRONMENTS_NODES_REMOTE_PUBLIC_PORT,
+                    constants.ENVIRONMENTS_NODES_REMOTE_PUBLIC_ADDRESS,
+                    constants.ENVIRONMENTS_NODES_REMOTE_USE_PUBLIC_ADDRESS,
+                ],
+                is_none_included=True,
+            )
+        )
         return results
 
 
