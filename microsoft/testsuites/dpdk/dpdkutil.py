@@ -487,7 +487,7 @@ def verify_dpdk_send_receive(
 
     # get test duration variable if set
     # enables long-running tests to shakeQoS and SLB issue
-    test_duration: int = variables.get("dpdk_test_duration", 15)
+    test_duration: int = variables.get("dpdk_test_duration", 600)
     kill_timeout = test_duration + 5
     test_kits = init_nodes_concurrent(environment, log, variables, pmd)
 
