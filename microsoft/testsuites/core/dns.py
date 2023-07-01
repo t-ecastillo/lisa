@@ -103,7 +103,7 @@ class Dns(TestSuite):
                         ["debian-keyring", "debian-archive-keyring"]
                     )
             node.execute(
-                "apt update && unattended-upgrade -d -v",
+                "apt update && python3.6 /usr/bin/unattended-upgrade -d -v",
                 sudo=True,
                 shell=True,
                 expected_exit_code=0,

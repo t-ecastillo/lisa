@@ -171,7 +171,34 @@ class Infiniband(Feature):
         cat = self._node.tools[Cat]
         return cat.read(f"/sys/class/infiniband/{ib_device_name}/ports/1/pkeys/0")
 
-    def setup_rdma(self) -> None:  # noqa: C901
+    def setup_rdma(self, install_ofed: bool = True) -> None:
+        if install_ofed:
+            self.install_ofed()
+
+        node = self._node
+        # Turn off firewall
+        firewall = node.tools[Firewall]
+        firewall.stop()
+        # Disable SELinux
+        sed = node.tools[Sed]
+        sed.substitute(
+            regexp="SELINUX=enforcing",
+            replacement="SELINUX=disabled",
+            file="/etc/selinux/config",
+            sudo=True,
+        )
+
+        if isinstance(node.os, Ubuntu) and node.os.information.version > "18.4.0":
+            node.tools[Sed].substitute(
+                regexp='GRUB_CMDLINE_LINUX="\\(.*\\)"',
+                replacement='GRUB_CMDLINE_LINUX="\\1 net.ifnames=0 biosdevname=0"',
+                file="/etc/default/grub",
+                sudo=True,
+            )
+            node.execute("update-grub", sudo=True)
+            node.reboot()
+
+    def install_ofed(self) -> None:  # noqa: C901
         node = self._node
         os_version = node.os.information.release.split(".")
         # Dependencies
@@ -297,19 +324,6 @@ class Infiniband(Feature):
                 "supported by the HCP team",
             )
 
-        # Turn off firewall
-        firewall = node.tools[Firewall]
-        firewall.stop()
-
-        # Disable SELinux
-        sed = node.tools[Sed]
-        sed.substitute(
-            regexp="SELINUX=enforcing",
-            replacement="SELINUX=disabled",
-            file="/etc/selinux/config",
-            sudo=True,
-        )
-
         # Install OFED
         mofed_version = self._get_mofed_version()
         if isinstance(node.os, Oracle):
@@ -390,16 +404,6 @@ class Infiniband(Feature):
             sudo=True,
         )
 
-        if isinstance(node.os, Ubuntu) and node.os.information.version > "18.4.0":
-            node.tools[Sed].substitute(
-                regexp='GRUB_CMDLINE_LINUX="\\(.*\\)"',
-                replacement='GRUB_CMDLINE_LINUX="\\1 net.ifnames=0 biosdevname=0"',
-                file="/etc/default/grub",
-                sudo=True,
-            )
-            node.execute("update-grub", sudo=True)
-            node.reboot()
-
     def install_intel_mpi(self) -> None:
         node = self._node
         # Install Intel MPI
@@ -451,6 +455,16 @@ class Infiniband(Feature):
         node = self._node
         if isinstance(node.os, Redhat):
             node.os.install_packages("libstdc++.i686")
+        if isinstance(node.os, Ubuntu):
+            for package in [
+                "lib32gcc-9-dev",
+                "python3-dev",
+                "lib32gcc-8-dev",
+                "python-dev",
+            ]:
+                if node.os.is_package_in_repo(package):
+                    node.os.install_packages(package)
+
         # Install Open MPI
         wget = node.tools[Wget]
         script_path = wget.get(
@@ -467,13 +481,21 @@ class Infiniband(Feature):
             expected_exit_code=0,
             expected_exit_code_failure_message="Failed to install IBM MPI.",
         )
-        make = node.tools[Make]
-        make.make(
-            "",
+
+        node.execute(
+            "bash -c 'source /usr/share/modules/init/bash"
+            " && module load mpi/hpcx && mpicc -o ping_pong ping_pong.c'",
             cwd=node.get_pure_path("/opt/ibm/platform_mpi/help"),
-            update_envs={"MPI_IB_PKEY": self.get_pkey()},
             sudo=True,
+            shell=True,
         )
+        # make = node.tools[Make]
+        # make.make(
+        #     "",
+        #     cwd=node.get_pure_path("/opt/ibm/platform_mpi/help"),
+        #     update_envs={"MPI_IB_PKEY": self.get_pkey()},
+        #     sudo=True,
+        # )
 
     def install_mvapich_mpi(self) -> None:
         node = self._node

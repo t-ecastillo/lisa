@@ -224,6 +224,8 @@ class GpuTestSuite(TestSuite):
         # stop the service which uses nvidia module
         service = node.tools[Service]
         service.stop_service("nvidia-persistenced")
+        service.stop_service("nvidia-dcgm")
+        service.stop_service("nvidia-fabricmanager")
 
         for device in gpu_devices:
             lspci.disable_device(device)
@@ -253,7 +255,7 @@ class GpuTestSuite(TestSuite):
         _install_driver(node, log_path, log)
         _check_driver_installed(node, log)
 
-        # Step 1, pytorch and CUDA needs 4GB space to download and install
+        # Step 1, pytorch and CUDA needs 20GB space to download and install
         torch_required_space = 5
         work_path = node.get_working_path_with_required_space(torch_required_space)
         use_new_path = work_path != str(node.working_path)
@@ -267,6 +269,11 @@ class GpuTestSuite(TestSuite):
                 pip.install_packages("torch", work_path)
             else:
                 pip.install_packages("torch")
+
+        node.execute("python3.8 -m pip uninstall numpy -y", sudo=True)
+        node.execute("apt purge -y python3-numpy", sudo=True)
+        node.execute("python3.8 -m pip install --upgrade pip", sudo=True)
+        node.execute("python3.8 -m pip install numpy", sudo=True)
 
         # Step 3, verification
         gpu = node.features[Gpu]
@@ -346,10 +353,13 @@ def _install_cudnn(node: Node, log: Logger, install_path: str) -> None:
 
     log.debug(f"CUDNN Extracted path is: {work_path}  ")
     download_path = wget.get(
-        url=_cudnn_location, filename=str(_cudnn_file_name), file_path=work_path
+        url=_cudnn_location,
+        filename=str(_cudnn_file_name),
+        file_path=work_path,
+        sudo=True,
     )
 
-    node.tools[Tar].extract(download_path, work_path)
+    node.tools[Tar].extract(download_path, work_path, sudo=True)
 
     if isinstance(node.os, Debian):
         target_path = "/usr/lib/x86_64-linux-gnu/"

@@ -61,7 +61,7 @@ class Pip(Tool):
             cache_path = install_path + "/tmp"
             node.tools[Mkdir].create_directory(cache_path)
 
-            cmd_line += f" -t {tagert_path} --cache-dir={cache_path} -b {cache_path}"
+            cmd_line += f" -t {tagert_path} --cache-dir={cache_path}"
             # Since Python 3.9, pip 21.2, -b for build path has been deprecated
             # Using TMPDIR/TMP/TEMP Env Variable instead
             envs = {"TMPDIR": cache_path}

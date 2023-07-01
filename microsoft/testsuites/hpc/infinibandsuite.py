@@ -434,19 +434,24 @@ class InfinibandSuite(TestSuite):
         client_ssh.add_known_host(server_ip)
 
         server_node.execute(
-            "/opt/ibm/platform_mpi/bin/mpirun "
-            f"-hostlist {server_ip}:1,{server_ip}:1 -np 2 -e "
-            f"MPI_IB_PKEY={server_ib.get_pkey()} -ibv /opt/ibm/platform_mpi/help/"
-            "ping_pong 4096",
+            "bash -c 'source /usr/share/modules/init/bash && module load mpi/hpcx &&"
+            "mpirun "
+            f"--host {server_ip}:1,{server_ip}:1 -np 2 -x "
+            f"MPI_IB_PKEY={server_ib.get_pkey()} -x LD_LIBRARY_PATH /opt/ibm/platform_mpi/help/"
+            "ping_pong 4096'",
+            shell=True,
             expected_exit_code=0,
             expected_exit_code_failure_message="Infiniband intra-node ping pong "
             "test failed with IBM MPI",
         )
+
         server_node.execute(
-            "/opt/ibm/platform_mpi/bin/mpirun "
-            f"-hostlist {server_ip}:1,{client_ip}:1 -np 2 -e "
-            f"MPI_IB_PKEY={server_ib.get_pkey()} -ibv /opt/ibm/platform_mpi/help/"
-            "ping_pong 4096",
+            "bash -c 'source /usr/share/modules/init/bash && module load mpi/hpcx &&"
+            "mpirun "
+            f"--host {server_ip}:1,{client_ip}:1 -np 2 -x "
+            f"MPI_IB_PKEY={server_ib.get_pkey()} -x LD_LIBRARY_PATH /opt/ibm/platform_mpi/help/"
+            "ping_pong 4096'",
+            shell=True,
             expected_exit_code=0,
             expected_exit_code_failure_message="Infiniband inter-node ping pong "
             "test failed with IBM MPI",
