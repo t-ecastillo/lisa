@@ -253,8 +253,8 @@ class GpuTestSuite(TestSuite):
         _install_driver(node, log_path, log)
         _check_driver_installed(node, log)
 
-        # Step 1, pytorch and CUDA needs 4GB space to download and install
-        torch_required_space = 5
+        # Step 1, pytorch and CUDA needs 8GB space to download and install
+        torch_required_space = 8
         work_path = node.get_working_path_with_required_space(torch_required_space)
         use_new_path = work_path != str(node.working_path)
 
