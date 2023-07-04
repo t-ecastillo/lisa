@@ -168,6 +168,7 @@ class NetworkPerformace(TestSuite):
         requirement=node_requirement(
             node=schema.NodeSpace(
                 node_count=2,
+                nic_count=4,
                 memory_mb=search_space.IntRange(min=8192),
                 network_interface=Sriov(),
             )
