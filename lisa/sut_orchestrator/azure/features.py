@@ -1084,37 +1084,37 @@ class AzureDiskOptionSettings(schema.DiskOptionSettings):
                     value.data_disk_size = self._get_disk_size_from_iops(
                         value.data_disk_iops, disk_type_iops
                     )
-                elif self.data_disk_size:
-                    req_disk_size = search_space.count_space_to_int_range(
-                        self.data_disk_size
-                    )
-                    cap_disk_size = search_space.count_space_to_int_range(
-                        capability.data_disk_size
-                    )
-                    min_size = max(req_disk_size.min, cap_disk_size.min)
-                    max_size = min(req_disk_size.max, cap_disk_size.max)
+            elif self.data_disk_size:
+                req_disk_size = search_space.count_space_to_int_range(
+                    self.data_disk_size
+                )
+                cap_disk_size = search_space.count_space_to_int_range(
+                    capability.data_disk_size
+                )
+                min_size = max(req_disk_size.min, cap_disk_size.min)
+                max_size = min(req_disk_size.max, cap_disk_size.max)
 
-                    value.data_disk_iops = min(
-                        iops
-                        for iops, disk_size in disk_type_iops
-                        if disk_size >= min_size and disk_size <= max_size
-                    )
-                    value.data_disk_size = self._get_disk_size_from_iops(
-                        value.data_disk_iops, disk_type_iops
-                    )
-                else:
-                    # if req is not specified, query minimum value.
-                    cap_disk_size = search_space.count_space_to_int_range(
-                        capability.data_disk_size
-                    )
-                    value.data_disk_iops = min(
-                        iops
-                        for iops, _ in disk_type_iops
-                        if iops >= cap_disk_size.min and iops <= cap_disk_size.max
-                    )
-                    value.data_disk_size = self._get_disk_size_from_iops(
-                        value.data_disk_iops, disk_type_iops
-                    )
+                value.data_disk_iops = min(
+                    iops
+                    for iops, disk_size in disk_type_iops
+                    if disk_size >= min_size and disk_size <= max_size
+                )
+                value.data_disk_size = self._get_disk_size_from_iops(
+                    value.data_disk_iops, disk_type_iops
+                )
+            else:
+                # if req is not specified, query minimum value.
+                cap_disk_size = search_space.count_space_to_int_range(
+                    capability.data_disk_size
+                )
+                value.data_disk_iops = min(
+                    iops
+                    for iops, _ in disk_type_iops
+                    if iops >= cap_disk_size.min and iops <= cap_disk_size.max
+                )
+                value.data_disk_size = self._get_disk_size_from_iops(
+                    value.data_disk_iops, disk_type_iops
+                )
         elif method == RequirementMethod.intersect:
             value.data_disk_iops = search_space.intersect_countspace(
                 self.data_disk_iops, capability.data_disk_iops
