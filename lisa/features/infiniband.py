@@ -441,16 +441,18 @@ class Infiniband(Feature):
         node = self._node
         # Install Open MPI
         wget = node.tools[Wget]
+        file_name = "openmpi.tar.gz"
         tar_file_path = wget.get(
-            "https://download.open-mpi.org/release/open-mpi/v4.0/openmpi-4.0.5.tar.gz",
+            "https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-4.1.5.tar.gz",
             file_path=self.resource_disk_path,
             executable=True,
             overwrite=False,
             sudo=True,
+            filename=file_name,
         )
         tar = node.tools[Tar]
         tar.extract(tar_file_path, self.resource_disk_path, gzip=True, sudo=True)
-        openmpi_folder = node.get_pure_path(f"{self.resource_disk_path}/openmpi-4.0.5")
+        openmpi_folder = node.get_pure_path(f"{self.resource_disk_path}/{file_name}")
 
         node.execute(
             "./configure --enable-mpirun-prefix-by-default",
