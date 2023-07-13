@@ -137,7 +137,7 @@ class Docker(Tool):
                     ["docker-ce", "docker-ce-cli", "containerd.io"]
                 )
         elif isinstance(self.node.os, CBLMariner):
-            self.node.os.install_packages(["moby-engine", "moby-cli"])
+            self.node.os.install_packages(["moby-engine==20.10.24-2.cm2", "moby-cli==20.10.24-2.cm2"])
         elif isinstance(self.node.os, SLES):
             self.node.os.install_packages(["docker"])
         elif isinstance(self.node.os, BSD):
