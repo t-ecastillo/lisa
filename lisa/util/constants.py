@@ -82,6 +82,7 @@ TRANSFORMER_PHASE_CLEANUP = "cleanup"
 COMBINATOR = "combinator"
 COMBINATOR_GRID = "grid"
 COMBINATOR_BATCH = "batch"
+COMBINATOR_GITBISECT = "git_bisect"
 
 ENVIRONMENT = "environment"
 ENVIRONMENTS = "environments"
