@@ -303,7 +303,6 @@ class DeployTransformer(Transformer):
         platform.deploy_environment(environment)
 
         resource_group_name = get_environment_context(environment).resource_group_name
-
         # generate return results
         results = {
             self.__resource_group_name: resource_group_name,
