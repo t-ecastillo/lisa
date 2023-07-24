@@ -106,6 +106,7 @@ class Process:
         no_error_log: bool = False,
         no_info_log: bool = False,
         no_debug_log: bool = False,
+        encoding: str = "utf-8",
     ) -> None:
         """
         command include all parameters also.
@@ -167,7 +168,7 @@ class Process:
                 update_env=update_envs,
                 allow_error=True,
                 store_pid=self._is_posix,
-                encoding="utf-8",
+                encoding=encoding,
                 use_pty=self._is_posix,
             )
             # save for logging.
@@ -419,10 +420,8 @@ class Process:
             isinstance(self._shell, SshShell)
             and self._shell.spawn_initialization_error_string
         ):
-            raw_input = re.sub(
-                re.compile(rf"{self._shell.spawn_initialization_error_string}\r\n"),
-                "",
-                raw_input,
+            raw_input = raw_input.replace(
+                rf"{self._shell.spawn_initialization_error_string}\n", ""
             )
             self._log.debug(
                 "filter the profile error string: "

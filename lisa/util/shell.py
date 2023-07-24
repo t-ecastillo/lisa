@@ -35,6 +35,16 @@ _spawn_initialization_error_pattern = re.compile(
 )
 
 
+def minimal_escape_sh(value):
+    return value.replace("'", "'\\''")
+
+
+def minimal_generate_run_command(
+    self, command_args, store_pid, cwd=None, update_env={}, new_process_group=False
+):
+    return " ".join(map(minimal_escape_sh, command_args))
+
+
 def wait_tcp_port_ready(
     address: str, port: int, log: Optional[Logger] = None, timeout: int = 300
 ) -> Tuple[bool, int]:
@@ -303,9 +313,23 @@ class SshShell(InitializableMixin):
         assert self._inner_shell
         have_tried_minimal_type = False
 
+        store_pid = False
         while True:
+            print(
+                "XXX",
+                command,
+                update_env,
+                store_pid,
+                cwd,
+                stdout,
+                stderr,
+                encoding,
+                use_pty,
+                allow_error,
+            )
             try:
                 if self._inner_shell._spur._shell_type == spur.ssh.ShellTypes.minimal:
+                    print("XXX: trying minimal")
                     # minimal shell type doesn't support store_pid
                     store_pid = False
                 process: spur.ssh.SshProcess = _spawn_ssh_process(
@@ -338,8 +362,16 @@ class SshShell(InitializableMixin):
                 # /etc/profile.d/clover.sh:line 10:/opt/clover/bin/prepare-hostname.sh:
                 # Permission denied'' as integer)"
                 # Except CommandInitializationError then use minimal shell type.
+                print(identifier)
                 if not have_tried_minimal_type:
+                    print("XXX: fallback to minimal")
                     self._inner_shell._spur._shell_type = spur.ssh.ShellTypes.minimal
+
+                    funcType = type(spur.ssh.ShellTypes.minimal.generate_run_command)
+                    self._inner_shell._spur._shell_type.generate_run_command = funcType(
+                        minimal_generate_run_command,
+                        self._inner_shell._spur._shell_type,
+                    )
                     have_tried_minimal_type = True
                     matched = _spawn_initialization_error_pattern.search(
                         str(identifier)
@@ -347,6 +379,10 @@ class SshShell(InitializableMixin):
                     if matched:
                         self.spawn_initialization_error_string = matched.group(
                             "linux_profile_error"
+                        ).replace("*", "")
+                        print(
+                            "XXX: spawn init error string is",
+                            self.spawn_initialization_error_string,
                         )
                 else:
                     raise identifier
@@ -681,8 +717,19 @@ class LocalShell(InitializableMixin):
         use_pty: bool = False,
         allow_error: bool = False,
     ) -> spur.local.LocalProcess:
+        print(
+            command,
+            update_env,
+            store_pid,
+            cwd,
+            stdout,
+            stderr,
+            encoding,
+            use_pty,
+            allow_error,
+        )
         return self._inner_shell.spawn(
-            command=command,
+            command,
             update_env=update_env,
             store_pid=store_pid,
             cwd=cwd,
