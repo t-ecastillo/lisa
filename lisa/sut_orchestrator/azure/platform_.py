@@ -1395,6 +1395,10 @@ class AzurePlatform(Platform):
 
         # Set disk type
         assert capability.disk, "node space must have disk defined."
+        assert isinstance(capability.disk.os_disk_type, schema.DiskType)
+        arm_parameters.os_disk_type = features.get_azure_disk_type(
+            capability.disk.os_disk_type
+        )
         assert isinstance(capability.disk.disk_type, schema.DiskType)
         arm_parameters.disk_type = features.get_azure_disk_type(
             capability.disk.disk_type
@@ -1628,6 +1632,9 @@ class AzurePlatform(Platform):
             is_allow_set=True
         )
         node_space.disk = features.AzureDiskOptionSettings()
+        node_space.disk.os_disk_type = search_space.SetSpace[schema.DiskType](
+            is_allow_set=True, items=[]
+        )
         node_space.disk.disk_type = search_space.SetSpace[schema.DiskType](
             is_allow_set=True, items=[]
         )
@@ -1643,6 +1650,13 @@ class AzurePlatform(Platform):
 
         # fill supported features
         azure_raw_capabilities: Dict[str, str] = {}
+        for location_info in resource_sku.location_info:
+            for zone_details in location_info.zone_details:
+                for location_capability in zone_details.capabilities:
+                    azure_raw_capabilities[
+                        location_capability.name
+                    ] = location_capability.value
+
         for sku_capability in resource_sku.capabilities:
             # prevent to loop in every feature
             azure_raw_capabilities[sku_capability.name] = sku_capability.value
@@ -1679,7 +1693,11 @@ class AzurePlatform(Platform):
             node_space.network_interface.max_nic_count = sku_nic_count
 
         if azure_raw_capabilities.get("PremiumIO", None) == "True":
+            node_space.disk.os_disk_type.add(schema.DiskType.PremiumSSDLRS)
             node_space.disk.disk_type.add(schema.DiskType.PremiumSSDLRS)
+
+        if azure_raw_capabilities.get("UltraSSDAvailable", None) == "True":
+            node_space.disk.disk_type.add(schema.DiskType.UltraSSDLRS)
 
         disk_controller_types = azure_raw_capabilities.get("DiskControllerTypes", None)
         if disk_controller_types:
@@ -1702,7 +1720,7 @@ class AzurePlatform(Platform):
             cached_disk_bytes = azure_raw_capabilities.get("CachedDiskBytes", 0)
             cached_disk_bytes_gb = int(cached_disk_bytes) / 1024 / 1024 / 1024
             if cached_disk_bytes_gb >= 30:
-                node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
+                node_space.disk.os_disk_type.add(schema.DiskType.Ephemeral)
 
         # set AN
         if azure_raw_capabilities.get("AcceleratedNetworkingEnabled", None) == "True":
@@ -1801,6 +1819,8 @@ class AzurePlatform(Platform):
             if feature_setting:
                 node_space.features.add(feature_setting)
 
+        node_space.disk.os_disk_type.add(schema.DiskType.StandardHDDLRS)
+        node_space.disk.os_disk_type.add(schema.DiskType.StandardSSDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardHDDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardSSDLRS)
         node_space.network_interface.data_path.add(schema.NetworkDataPath.Synthetic)
@@ -1970,11 +1990,18 @@ class AzurePlatform(Platform):
         )
         node_space.disk = features.AzureDiskOptionSettings()
         node_space.disk.data_disk_count = search_space.IntRange(min=0)
+        node_space.disk.os_disk_type = search_space.SetSpace[schema.DiskType](
+            is_allow_set=True, items=[]
+        )
+        node_space.disk.os_disk_type.add(schema.DiskType.PremiumSSDLRS)
+        node_space.disk.os_disk_type.add(schema.DiskType.Ephemeral)
+        node_space.disk.os_disk_type.add(schema.DiskType.StandardHDDLRS)
+        node_space.disk.os_disk_type.add(schema.DiskType.StandardSSDLRS)
         node_space.disk.disk_type = search_space.SetSpace[schema.DiskType](
             is_allow_set=True, items=[]
         )
+        node_space.disk.disk_type.add(schema.DiskType.UltraSSDLRS)
         node_space.disk.disk_type.add(schema.DiskType.PremiumSSDLRS)
-        node_space.disk.disk_type.add(schema.DiskType.Ephemeral)
         node_space.disk.disk_type.add(schema.DiskType.StandardHDDLRS)
         node_space.disk.disk_type.add(schema.DiskType.StandardSSDLRS)
         node_space.disk.disk_controller_type = search_space.SetSpace[
