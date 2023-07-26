@@ -262,6 +262,15 @@ class ProvisionBootTimeMessage(MessageBase):
     information: Dict[str, str] = field(default_factory=dict)
 
 
+@dataclass
+class KernelBuildMessage(MessageBase):
+    old_kernel_version: str = ""
+    new_kernel_version: str = ""
+    build_sucess: bool = False
+    boot_sucess: bool = False
+    error_message: str = ""
+
+
 def _is_completed_status(status: TestStatus) -> bool:
     return status in [
         TestStatus.FAILED,

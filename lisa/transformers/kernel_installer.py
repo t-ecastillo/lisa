@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Type, cast
 
 from dataclasses_json import dataclass_json
 
-from lisa import schema
+from lisa import notifier, schema
 from lisa.node import Node, quick_connect
 from lisa.operating_system import Posix, Ubuntu
 from lisa.secret import PATTERN_HEADTAIL, add_secret
@@ -16,6 +16,7 @@ from lisa.tools import Uname
 from lisa.transformer import Transformer
 from lisa.util import field_metadata, filter_ansi_escape, get_matched_str, subclasses
 from lisa.util.logger import Logger, get_logger
+from lisa.messages import KernelBuildMessage
 
 
 @dataclass_json()
@@ -72,6 +73,7 @@ class KernelInstallerTransformerSchema(schema.Transformer):
     installer: Optional[BaseInstallerSchema] = field(
         default=None, metadata=field_metadata(required=True)
     )
+    raise_exception: Optional[bool] = True
 
 
 class BaseInstaller(subclasses.BaseClassWithRunbookMixin):
@@ -100,6 +102,9 @@ class BaseInstaller(subclasses.BaseClassWithRunbookMixin):
 
 class KernelInstallerTransformer(Transformer):
     _information_output_name = "information"
+    _build_success_output_name = "build_success"
+    _boot_success_output_name = "boot_success"
+
     _information: Dict[str, Any] = dict()
 
     @classmethod
@@ -119,6 +124,10 @@ class KernelInstallerTransformer(Transformer):
         assert runbook.connection, "connection must be defined."
         assert runbook.installer, "installer must be defined."
 
+        message = KernelBuildMessage()
+        build_sucess: bool = False
+        boot_success: bool = False
+
         node = quick_connect(runbook.connection, "installer_node")
 
         uname = node.tools[Uname]
@@ -131,47 +140,67 @@ class KernelInstallerTransformer(Transformer):
         )
 
         installer.validate()
-        installed_kernel_version = installer.install()
-        self._information = installer.information
-        self._log.info(f"installed kernel version: {installed_kernel_version}")
 
-        # for ubuntu cvm kernel, there is no menuentry added into grub file
-        if hasattr(installer.runbook, "source"):
-            if installer.runbook.source != "linux-image-azure-fde":
-                posix = cast(Posix, node.os)
-                posix.replace_boot_kernel(installed_kernel_version)
-            else:
-                efi_files = node.execute(
-                    "ls -t /usr/lib/linux/efi/kernel.efi-*-azure-cvm",
-                    sudo=True,
-                    shell=True,
-                    expected_exit_code=0,
-                    expected_exit_code_failure_message=(
-                        "fail to find kernel.efi file for kernel type "
-                        " linux-image-azure-fde"
-                    ),
-                )
-                efi_file = efi_files.stdout.splitlines()[0]
-                node.execute(
-                    (
-                        "cp /boot/efi/EFI/ubuntu/grubx64.efi "
-                        "/boot/efi/EFI/ubuntu/grubx64.efi.bak"
-                    ),
-                    sudo=True,
-                )
-                node.execute(
-                    f"cp {efi_file} /boot/efi/EFI/ubuntu/grubx64.efi",
-                    sudo=True,
-                    shell=True,
-                )
+        try:
+            message.old_kernel_version = uname.get_linux_information(
+                force_run=True
+            ).kernel_version_raw
 
-        self._log.info("rebooting")
-        node.reboot()
-        self._log.info(
-            f"kernel version after install: "
-            f"{uname.get_linux_information(force_run=True)}"
-        )
-        return {self._information_output_name: self._information}
+            installed_kernel_version = installer.install()
+            build_sucess = True
+            self._information = installer.information
+            self._log.info(f"installed kernel version: {installed_kernel_version}")
+
+            # for ubuntu cvm kernel, there is no menuentry added into grub file
+            if hasattr(installer.runbook, "source"):
+                if installer.runbook.source != "linux-image-azure-fde":
+                    posix = cast(Posix, node.os)
+                    posix.replace_boot_kernel(installed_kernel_version)
+                else:
+                    efi_files = node.execute(
+                        "ls -t /usr/lib/linux/efi/kernel.efi-*-azure-cvm",
+                        sudo=True,
+                        shell=True,
+                        expected_exit_code=0,
+                        expected_exit_code_failure_message=(
+                            "fail to find kernel.efi file for kernel type "
+                            " linux-image-azure-fde"
+                        ),
+                    )
+                    efi_file = efi_files.stdout.splitlines()[0]
+                    node.execute(
+                        (
+                            "cp /boot/efi/EFI/ubuntu/grubx64.efi "
+                            "/boot/efi/EFI/ubuntu/grubx64.efi.bak"
+                        ),
+                        sudo=True,
+                    )
+                    node.execute(
+                        f"cp {efi_file} /boot/efi/EFI/ubuntu/grubx64.efi",
+                        sudo=True,
+                        shell=True,
+                    )
+
+            self._log.info("rebooting")
+            node.reboot()
+            boot_success = True
+            new_kernel_version = uname.get_linux_information(force_run=True)
+            message.new_kernel_version = new_kernel_version.kernel_version_raw
+            self._log.info(f"kernel version after install: " f"{new_kernel_version}")
+        except Exception as e:
+            message.error_message = str(e)
+            if runbook.raise_exception:
+                raise e
+            self._log.info(f"Kernel build failed: {e}")
+        finally:
+            message.build_sucess = build_sucess
+            message.boot_sucess = boot_success
+            notifier.notify(message)
+        return {
+            self._information_output_name: self._information,
+            self._build_success_output_name: build_sucess,
+            self._boot_success_output_name: boot_success,
+        }
 
 
 class RepoInstaller(BaseInstaller):
