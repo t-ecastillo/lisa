@@ -12,7 +12,7 @@ from lisa.util import LisaException, constants, field_metadata
 from lisa.node import Node, quick_connect
 from lisa.util.process import ExecutableResult
 from lisa.variable import VariableEntry
-from lisa.messages import TestResultMessage, TestStatus
+from lisa.messages import KernelBuildMessage, TestResultMessage, TestStatus
 
 SOURCE_PATH = Path("/mnt/code")
 STOP_PATTERNS = ["first bad commit", "This means the bug has been fixed between"]
@@ -44,21 +44,21 @@ class GitBisectCombinatorSchema(schema.Combinator):
     )
 
 
-class BisectCache:
-    def __init__(self) -> None:
-        self.cache: List[str] = []
-        self.iteration: int = 0
+# class BisectCache:
+#     def __init__(self) -> None:
+#         self.cache: List[str] = []
+#         self.iteration: int = 0
 
 
 class GitBisectCombinator(Combinator):
-    def __init__(self, runbook: GitBisectCombinatorSchema) -> None:
+    def __init__(
+        self,
+        runbook: GitBisectCombinatorSchema,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(runbook)
-        # assert runbook.connection, "connection must be defined."
-        # assert runbook.repo, "source repo must be defined."
-        # assert runbook.good_commit, "good commit must be defined."
-        # assert runbook.bad_commit, "bad commit must be defined."
-        self._bisect_cache = BisectCache()
-        self._results_collector = GitBisectTestResult(schema.Notifier())
+        # self._bisect_cache = BisectCache()
+        self._result_notifier = GitBisectTestResult(schema.Notifier())
         notifier.register_notifier(self._results_collector)
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
@@ -76,48 +76,34 @@ class GitBisectCombinator(Combinator):
 
     def _next(self) -> Optional[Dict[str, Any]]:
         next: Optional[Dict[str, Any]] = None
-        iteration = self._bisect_cache.iteration
-        if iteration > 0:
-            results = self._results_collector.results
-            if self._results_collector and len(results) >= iteration:
-                index = iteration - 1
-                result: TestResultMessage = self._results_collector.results[index]
-                if result.status == TestStatus.FAILED:
-                    self._bisect_bad()
-                elif result.status == TestStatus.PASSED:
-                    self._bisect_good()
-                else:
-                    raise LisaException(f"Test result is {result.status}")
-            else:
-                # TODO: Improve messsage
-                raise LisaException("Test result is missing.")
+        # If is_good is defined, it overrides test result
+        # if self.runbook.is_good is not None:
+        #     self._check_is_good_param()
+        # else:
+        self._process_result()
         if not self._check_bisect_complete():
             next = {}
             next["ref"] = self._get_current_commit_hash()
-        self._bisect_cache.iteration += 1
+        self._result_notifier.increment_iteration()
         return next
 
-    def _process_test_result(self) -> None:
-        iteration = self._bisect_cache.iteration
-        if iteration > 0:
-            results = self._results_collector.results
-            if self._results_collector and len(results) >= iteration:
-                result: TestResultMessage = self._results_collector.results[iteration]
-                if result.status == TestStatus.FAILED:
-                    self._bisect_bad()
-                elif result.status == TestStatus.PASSED:
-                    self._bisect_good()
-                else:
-                    raise LisaException(f"Test result is {result.status}")
+    def _check_value_from_file(self) -> None:
+        if self.runbook.is_good is not None:
+            if self.runbook.is_good:
+                self._bisect_good()
             else:
-                # TODO: Improve messsage
-                raise LisaException("Test result is missing.")
+                self._bisect_bad()
 
-    # def _validate_node(self) -> None:
-    #     node = self._get_remote_node()
-    #     assert node.test_connection(), "connection to remote node failed."
-    #     node.close()
-    #     node.tools[Git]
+    def _process_result(self) -> None:
+        iteration = self._result_notifier.get_iteration_count()
+        results = self._result_notifier.results.get(iteration)
+        if results is not None:
+            if results:
+                self._bisect_good()
+            else:
+                self._bisect_bad()
+        else:
+            raise LisaException(f"Result missing for interation {iteration}, {results}")
 
     def _clone_source(self) -> None:
         node = self._get_remote_node()
@@ -132,13 +118,6 @@ class GitBisectCombinator(Combinator):
     def _get_remote_node(self) -> Node:
         node = quick_connect(self.runbook.connection, "source_node")
         return node
-
-    # def _recover_bisect(self) -> None:
-    #     self._start_bisect()
-    #     node = self._get_remote_node()
-    #     git = node.tools[Git]
-    #     for state in self._git_bisect_cache:
-    #         git.bisect(SOURCE_PATH, state)
 
     def _start_bisect(self) -> None:
         node = self._get_remote_node()
@@ -182,14 +161,39 @@ class GitBisectTestResult(notifier.Notifier):
         return schema.Notifier
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
-        self.results: List[TestResultMessage] = []
+        self._iteration = 0
+        self.results: Dict[int, bool] = {}
+        # self.results: List[TestResultMessage] = []
+        self.build_result: List[KernelBuildMessage] = []
+
+    def increment_iteration(self) -> None:
+        self._iteration += 1
+
+    def get_iteration_count(self) -> int:
+        return self._iteration
 
     def _received_message(self, message: messages.MessageBase) -> None:
         if isinstance(message, messages.TestResultMessage):
-            if message.is_completed:
-                self.results.append(message)
+            self._update_test_result(message)
+        elif isinstance(message, messages.KernelBuildMessage):
+            self._update_result(message.build_sucess)
+            self._update_result(message.boot_sucess)
         else:
             self._log.error("Received unsubscribed message type")
 
+    def _update_test_result(self, message: messages.TestResultMessage) -> None:
+        if message.is_completed:
+            if message.status == TestStatus.FAILED:
+                self._update_result(False)
+            elif message.status == TestStatus.PASSED:
+                self._update_result(True)
+
+    def _update_result(self, result: bool) -> None:
+        current_result = self.results.get(self._iteration, None)
+        if current_result:
+            self.results[self._iteration] = current_result and result
+        else:
+            self.results[self._iteration] = result
+
     def _subscribed_message_type(self) -> List[Type[messages.MessageBase]]:
-        return [TestResultMessage]
+        return [TestResultMessage, KernelBuildMessage]
