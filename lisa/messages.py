@@ -264,6 +264,7 @@ class ProvisionBootTimeMessage(MessageBase):
 
 @dataclass
 class KernelBuildMessage(MessageBase):
+    type: str = "KernelBuild"
     old_kernel_version: str = ""
     new_kernel_version: str = ""
     build_sucess: bool = False

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from dataclasses_json import dataclass_json
 
@@ -18,6 +18,7 @@ SOURCE_PATH = Path("/mnt/code")
 STOP_PATTERNS = ["first bad commit", "This means the bug has been fixed between"]
 
 
+# Combinator requires a node to clone the source code.
 @dataclass_json()
 @dataclass
 class GitBisectCombinatorSchema(schema.Combinator):
@@ -44,10 +45,21 @@ class GitBisectCombinatorSchema(schema.Combinator):
     )
 
 
-# class BisectCache:
-#     def __init__(self) -> None:
-#         self.cache: List[str] = []
-#         self.iteration: int = 0
+# GitBisect Combinator is a loop that runs "expanded" phase
+# of runbook until the bisect is complete.
+# There can be any number of expanded phases, but the
+# GitBisectTestResult notifier should have on boolean output per
+# iteration.
+
+
+def with_remote_node(func: Callable[..., Any]) -> Callable[..., Any]:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+        node = self._get_remote_node()
+        ret = func(self, node, *args, **kwargs)
+        node.close()
+        return ret
+
+    return wrapper
 
 
 class GitBisectCombinator(Combinator):
@@ -58,8 +70,8 @@ class GitBisectCombinator(Combinator):
     ) -> None:
         super().__init__(runbook)
         # self._bisect_cache = BisectCache()
-        self._result_notifier = GitBisectTestResult(schema.Notifier())
-        notifier.register_notifier(self._results_collector)
+        self._result_notifier = GitBisectResult(schema.Notifier())
+        notifier.register_notifier(self._result_notifier)
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         # self._validate_node()
@@ -76,10 +88,6 @@ class GitBisectCombinator(Combinator):
 
     def _next(self) -> Optional[Dict[str, Any]]:
         next: Optional[Dict[str, Any]] = None
-        # If is_good is defined, it overrides test result
-        # if self.runbook.is_good is not None:
-        #     self._check_is_good_param()
-        # else:
         self._process_result()
         if not self._check_bisect_complete():
             next = {}
@@ -87,26 +95,23 @@ class GitBisectCombinator(Combinator):
         self._result_notifier.increment_iteration()
         return next
 
-    def _check_value_from_file(self) -> None:
-        if self.runbook.is_good is not None:
-            if self.runbook.is_good:
-                self._bisect_good()
-            else:
-                self._bisect_bad()
-
     def _process_result(self) -> None:
         iteration = self._result_notifier.get_iteration_count()
-        results = self._result_notifier.results.get(iteration)
-        if results is not None:
-            if results:
-                self._bisect_good()
+        if iteration > 0:
+            results = self._result_notifier.results.get(iteration)
+            if results is not None:
+                if results:
+                    self._bisect_good()
+                else:
+                    self._bisect_bad()
             else:
-                self._bisect_bad()
-        else:
-            raise LisaException(f"Result missing for interation {iteration}, {results}")
+                raise LisaException(
+                    f"Result missing for interation {iteration}, {results}"
+                )
 
-    def _clone_source(self) -> None:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _clone_source(self, node: Node) -> None:
+        # node = self._get_remote_node()
         node.execute(
             cmd=f"mkdir -p {SOURCE_PATH}", shell=True, sudo=True, expected_exit_code=0
         )
@@ -119,39 +124,39 @@ class GitBisectCombinator(Combinator):
         node = quick_connect(self.runbook.connection, "source_node")
         return node
 
-    def _start_bisect(self) -> None:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _start_bisect(self, node: Node) -> None:
         git = node.tools[Git]
         git.bisect(cwd=SOURCE_PATH, cmd="start")
         git.bisect(cwd=SOURCE_PATH, cmd=f"good {self.runbook.good_commit}")
         git.bisect(cwd=SOURCE_PATH, cmd=f"bad {self.runbook.bad_commit}")
 
-    def _bisect_bad(self) -> None:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _bisect_bad(self, node: Node) -> None:
         git = node.tools[Git]
         git.bisect(cwd=SOURCE_PATH, cmd="bad")
 
-    def _bisect_good(self) -> None:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _bisect_good(self, node: Node) -> None:
         git = node.tools[Git]
         git.bisect(cwd=SOURCE_PATH, cmd="good")
 
-    def _check_bisect_complete(self) -> bool:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _check_bisect_complete(self, node: Node) -> bool:
         git = node.tools[Git]
         result = git.bisect(cwd=SOURCE_PATH, cmd="log")
         if any(pattern in result.stdout for pattern in STOP_PATTERNS):
             return True
         return False
 
-    def _get_current_commit_hash(self) -> str:
-        node = self._get_remote_node()
+    @with_remote_node
+    def _get_current_commit_hash(self, node: Node) -> str:
         git = node.tools[Git]
         result = git.run("rev-parse HEAD", cwd=SOURCE_PATH, force_run=True, shell=True)
         return result.stdout
 
 
-class GitBisectTestResult(notifier.Notifier):
+class GitBisectResult(notifier.Notifier):
     @classmethod
     def type_name(cls) -> str:
         return ""
@@ -163,8 +168,6 @@ class GitBisectTestResult(notifier.Notifier):
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self._iteration = 0
         self.results: Dict[int, bool] = {}
-        # self.results: List[TestResultMessage] = []
-        self.build_result: List[KernelBuildMessage] = []
 
     def increment_iteration(self) -> None:
         self._iteration += 1
@@ -190,7 +193,7 @@ class GitBisectTestResult(notifier.Notifier):
 
     def _update_result(self, result: bool) -> None:
         current_result = self.results.get(self._iteration, None)
-        if current_result:
+        if current_result is not None:
             self.results[self._iteration] = current_result and result
         else:
             self.results[self._iteration] = result
