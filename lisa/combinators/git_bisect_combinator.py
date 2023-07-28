@@ -66,6 +66,7 @@ class GitBisectCombinator(Combinator):
         **kwargs: Any,
     ) -> None:
         super().__init__(runbook)
+        self._iteration = 0
         self._result_notifier = GitBisectResult(schema.Notifier())
         notifier.register_notifier(self._result_notifier)
 
@@ -88,15 +89,20 @@ class GitBisectCombinator(Combinator):
             next = {}
             next["ref"] = self._get_current_commit_hash()
         self._result_notifier.result = None
+        self._iteration += 1
         return next
 
     def _process_result(self) -> None:
+        if self._iteration == 0:
+            return
         if self._result_notifier.result is not None:
             results = self._result_notifier.result
             if results:
                 self._bisect_good()
             else:
                 self._bisect_bad()
+        else:
+            raise LisaException("Notifier result should not be None")
 
     @with_remote_node
     def _clone_source(self, node: Node) -> None:
