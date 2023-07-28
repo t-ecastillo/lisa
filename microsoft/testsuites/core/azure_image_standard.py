@@ -36,7 +36,7 @@ from lisa.operating_system import (
 )
 from lisa.sut_orchestrator import AZURE, READY
 from lisa.sut_orchestrator.azure.features import AzureDiskOptionSettings
-from lisa.tools import Cat, Dmesg, Ls, Lsblk, Lscpu, Pgrep, Ssh
+from lisa.tools import Cat, Dmesg, Journalctl, Ls, Lsblk, Lscpu, Pgrep, Ssh
 from lisa.util import (
     LisaException,
     PassedException,
@@ -763,17 +763,32 @@ class AzureImageStandard(TestSuite):
             isinstance(node.os, Ubuntu) and node.os.information.version >= "22.10.0"
         ):
             log_output = node.tools[Dmesg].get_output()
+            log_file = "dmesg"
         else:
+            cat = node.tools[Cat]
             if node.shell.exists(node.get_pure_path("/var/log/messages")):
                 log_file = "/var/log/messages"
+                log_output = cat.read(log_file, force_run=True, sudo=True)
             elif node.shell.exists(node.get_pure_path("/var/log/syslog")):
                 log_file = "/var/log/syslog"
+                log_output = cat.read(log_file, force_run=True, sudo=True)
             else:
-                raise LisaException(
-                    "Neither /var/log/messages nor /var/log/syslog found"
+                log_file = "journalctl"
+                journalctl = node.tools[Journalctl]
+                journalctl_out = journalctl.run(
+                    "-b | head -n 1000",
+                    force_run=True,
+                    shell=True,
+                    sudo=True,
+                    expected_exit_code=0,
                 )
-            cat = node.tools[Cat]
-            log_output = cat.read(log_file, force_run=True, sudo=True)
+                log_output = journalctl_out.stdout
+            if not log_output:
+                raise LisaException(
+                    "Neither /var/log/messages nor /var/log/syslog found."
+                    "and journal ctl log is empty."
+                )
+
         lscpu = node.tools[Lscpu]
         arch = lscpu.get_architecture()
         current_console_device = console_device[CpuArchitecture(arch)]
