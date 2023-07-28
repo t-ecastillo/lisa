@@ -1,17 +1,14 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Type
 
 from dataclasses_json import dataclass_json
 
 from lisa import messages, notifier, schema
 from lisa.combinator import Combinator
 from lisa.tools.git import Git
-from lisa.tools.mkdir import Mkdir
 from lisa.util import LisaException, constants, field_metadata
 from lisa.node import Node, quick_connect
-from lisa.util.process import ExecutableResult
-from lisa.variable import VariableEntry
 from lisa.messages import KernelBuildMessage, TestResultMessage, TestStatus
 
 SOURCE_PATH = Path("/mnt/code")
@@ -48,8 +45,8 @@ class GitBisectCombinatorSchema(schema.Combinator):
 # GitBisect Combinator is a loop that runs "expanded" phase
 # of runbook until the bisect is complete.
 # There can be any number of expanded phases, but the
-# GitBisectTestResult notifier should have on boolean output per
-# iteration.
+# GitBisectTestResult notifier should have on boolean/None output per
+# phase.
 
 
 def with_remote_node(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -69,12 +66,10 @@ class GitBisectCombinator(Combinator):
         **kwargs: Any,
     ) -> None:
         super().__init__(runbook)
-        # self._bisect_cache = BisectCache()
         self._result_notifier = GitBisectResult(schema.Notifier())
         notifier.register_notifier(self._result_notifier)
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
-        # self._validate_node()
         self._clone_source()
         self._start_bisect()
 
@@ -92,26 +87,19 @@ class GitBisectCombinator(Combinator):
         if not self._check_bisect_complete():
             next = {}
             next["ref"] = self._get_current_commit_hash()
-        self._result_notifier.increment_iteration()
+        self._result_notifier.result = None
         return next
 
     def _process_result(self) -> None:
-        iteration = self._result_notifier.get_iteration_count()
-        if iteration > 0:
-            results = self._result_notifier.results.get(iteration)
-            if results is not None:
-                if results:
-                    self._bisect_good()
-                else:
-                    self._bisect_bad()
+        if self._result_notifier.result is not None:
+            results = self._result_notifier.result
+            if results:
+                self._bisect_good()
             else:
-                raise LisaException(
-                    f"Result missing for interation {iteration}, {results}"
-                )
+                self._bisect_bad()
 
     @with_remote_node
     def _clone_source(self, node: Node) -> None:
-        # node = self._get_remote_node()
         node.execute(
             cmd=f"mkdir -p {SOURCE_PATH}", shell=True, sudo=True, expected_exit_code=0
         )
@@ -166,14 +154,7 @@ class GitBisectResult(notifier.Notifier):
         return schema.Notifier
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
-        self._iteration = 0
-        self.results: Dict[int, bool] = {}
-
-    def increment_iteration(self) -> None:
-        self._iteration += 1
-
-    def get_iteration_count(self) -> int:
-        return self._iteration
+        self.result: Optional[bool] = None
 
     def _received_message(self, message: messages.MessageBase) -> None:
         if isinstance(message, messages.TestResultMessage):
@@ -192,11 +173,11 @@ class GitBisectResult(notifier.Notifier):
                 self._update_result(True)
 
     def _update_result(self, result: bool) -> None:
-        current_result = self.results.get(self._iteration, None)
+        current_result = self.result
         if current_result is not None:
-            self.results[self._iteration] = current_result and result
+            self.result = current_result and result
         else:
-            self.results[self._iteration] = result
+            self.result = result
 
     def _subscribed_message_type(self) -> List[Type[messages.MessageBase]]:
         return [TestResultMessage, KernelBuildMessage]
