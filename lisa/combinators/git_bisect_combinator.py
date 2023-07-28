@@ -163,7 +163,7 @@ class GitBisectResult(notifier.Notifier):
             self._update_result(message.build_sucess)
             self._update_result(message.boot_sucess)
         else:
-            self._log.error("Received unsubscribed message type")
+            raise LisaException("Received unsubscribed message type")
 
     def _update_test_result(self, message: messages.TestResultMessage) -> None:
         if message.is_completed:
