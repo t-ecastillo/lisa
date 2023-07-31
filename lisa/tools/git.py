@@ -6,12 +6,12 @@ import re
 from typing import Dict, List, Optional
 
 from assertpy import assert_that
-from lisa.util.process import ExecutableResult
 from semver import VersionInfo
 
 from lisa.executable import Tool
 from lisa.operating_system import Posix, Suse
 from lisa.util import LisaException, constants, filter_ansi_escape, get_matched_str
+from lisa.util.process import ExecutableResult
 
 
 class CodeExistsException(LisaException):

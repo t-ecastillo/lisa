@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Type, cast
 from dataclasses_json import dataclass_json
 
 from lisa import notifier, schema
+from lisa.messages import KernelBuildMessage
 from lisa.node import Node, quick_connect
 from lisa.operating_system import Posix, Ubuntu
 from lisa.secret import PATTERN_HEADTAIL, add_secret
@@ -16,7 +17,6 @@ from lisa.tools import Uname
 from lisa.transformer import Transformer
 from lisa.util import field_metadata, filter_ansi_escape, get_matched_str, subclasses
 from lisa.util.logger import Logger, get_logger
-from lisa.messages import KernelBuildMessage
 
 
 @dataclass_json()

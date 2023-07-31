@@ -6,10 +6,10 @@ from dataclasses_json import dataclass_json
 
 from lisa import messages, notifier, schema
 from lisa.combinator import Combinator
+from lisa.messages import KernelBuildMessage, TestResultMessage, TestStatus
+from lisa.node import Node, quick_connect
 from lisa.tools.git import Git
 from lisa.util import LisaException, constants, field_metadata
-from lisa.node import Node, quick_connect
-from lisa.messages import KernelBuildMessage, TestResultMessage, TestStatus
 
 SOURCE_PATH = Path("/mnt/code")
 STOP_PATTERNS = ["first bad commit", "This means the bug has been fixed between"]
