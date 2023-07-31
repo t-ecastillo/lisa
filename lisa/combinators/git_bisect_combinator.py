@@ -102,7 +102,10 @@ class GitBisectCombinator(Combinator):
             else:
                 self._bisect_bad()
         else:
-            raise LisaException("Notifier result should not be None")
+            raise LisaException(
+                "Bisect combinator does not get result for next iteration. Please check"
+                "GitBisectResult the notifier."
+            )
 
     @with_remote_node
     def _clone_source(self, node: Node) -> None:
