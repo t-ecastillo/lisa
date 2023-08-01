@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+import pathlib
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from dataclasses_json import dataclass_json
@@ -11,7 +12,6 @@ from lisa.node import Node, quick_connect
 from lisa.tools.git import Git
 from lisa.util import LisaException, constants, field_metadata
 
-SOURCE_PATH = Path("/mnt/code")
 STOP_PATTERNS = ["first bad commit", "This means the bug has been fixed between"]
 
 
@@ -69,10 +69,16 @@ class GitBisectCombinator(Combinator):
         self._iteration = 0
         self._result_notifier = GitBisectResult(schema.Notifier())
         notifier.register_notifier(self._result_notifier)
+        self._source_path: pathlib.PurePath
 
     def _initialize(self, *args: Any, **kwargs: Any) -> None:
         self._clone_source()
-        self._start_bisect()
+        if self._source_path:
+            self._start_bisect()
+        else:
+            raise LisaException(
+                "Source path is not set. Please check the source clone."
+            )
 
     @classmethod
     def type_name(cls) -> str:
@@ -109,13 +115,15 @@ class GitBisectCombinator(Combinator):
 
     @with_remote_node
     def _clone_source(self, node: Node) -> None:
-        node.execute(
-            cmd=f"mkdir -p {SOURCE_PATH}", shell=True, sudo=True, expected_exit_code=0
-        )
-        node.execute(cmd=f"chmod 777 {SOURCE_PATH}", sudo=True, expected_exit_code=0)
+        # node.execute(
+        #     cmd=f"mkdir -p {SOURCE_PATH}", shell=True, sudo=True, expected_exit_code=0
+        # )
+        # node.execute(cmd=f"chmod 777 {SOURCE_PATH}", sudo=True, expected_exit_code=0)
 
         git = node.tools[Git]
-        git.clone(url=self.runbook.repo, cwd=SOURCE_PATH, dir_name=".", timeout=1200)
+        self._source_path = git.clone(
+            url=self.runbook.repo, cwd=node.working_path, timeout=1200
+        )
 
     def _get_remote_node(self) -> Node:
         node = quick_connect(self.runbook.connection, "source_node")
@@ -124,24 +132,24 @@ class GitBisectCombinator(Combinator):
     @with_remote_node
     def _start_bisect(self, node: Node) -> None:
         git = node.tools[Git]
-        git.bisect(cwd=SOURCE_PATH, cmd="start")
-        git.bisect(cwd=SOURCE_PATH, cmd=f"good {self.runbook.good_commit}")
-        git.bisect(cwd=SOURCE_PATH, cmd=f"bad {self.runbook.bad_commit}")
+        git.bisect(cwd=self._source_path, cmd="start")
+        git.bisect(cwd=self._source_path, cmd=f"good {self.runbook.good_commit}")
+        git.bisect(cwd=self._source_path, cmd=f"bad {self.runbook.bad_commit}")
 
     @with_remote_node
     def _bisect_bad(self, node: Node) -> None:
         git = node.tools[Git]
-        git.bisect(cwd=SOURCE_PATH, cmd="bad")
+        git.bisect(cwd=self._source_path, cmd="bad")
 
     @with_remote_node
     def _bisect_good(self, node: Node) -> None:
         git = node.tools[Git]
-        git.bisect(cwd=SOURCE_PATH, cmd="good")
+        git.bisect(cwd=self._source_path, cmd="good")
 
     @with_remote_node
     def _check_bisect_complete(self, node: Node) -> bool:
         git = node.tools[Git]
-        result = git.bisect(cwd=SOURCE_PATH, cmd="log")
+        result = git.bisect(cwd=self._source_path, cmd="log")
         if any(pattern in result.stdout for pattern in STOP_PATTERNS):
             return True
         return False
@@ -149,7 +157,9 @@ class GitBisectCombinator(Combinator):
     @with_remote_node
     def _get_current_commit_hash(self, node: Node) -> str:
         git = node.tools[Git]
-        result = git.run("rev-parse HEAD", cwd=SOURCE_PATH, force_run=True, shell=True)
+        result = git.run(
+            "rev-parse HEAD", cwd=self._source_path, force_run=True, shell=True
+        )
         return result.stdout
 
 
