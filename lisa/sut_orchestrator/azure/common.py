@@ -141,6 +141,8 @@ class NodeContext:
     use_public_address: bool = True
     public_ip_address: str = ""
     private_ip_address: str = ""
+    location: str = ""
+    subscription_id: str = ""
 
 
 @dataclass_json()
@@ -1451,6 +1453,9 @@ def load_environment(
         node_context.username = platform_runbook.admin_username
         node_context.password = platform_runbook.admin_password
         node_context.private_key_file = platform_runbook.admin_private_key_file
+        node_context.location = get_vm(platform, node).location
+        node_context.subscription_id = platform.subscription_id
+
         (
             node_context.public_ip_address,
             node_context.private_ip_address,
